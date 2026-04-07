@@ -36,6 +36,11 @@ class TradeResponse(BaseModel):
     funded_at: datetime | None
 
 
+class HealthResponse(BaseModel):
+    status: str
+    db_path: str
+
+
 class FakeWalletFundingRPC:
     def __init__(self) -> None:
         self.confirmations_by_address: dict[str, int] = {}
@@ -115,3 +120,16 @@ def refresh_funding(trade_id: str) -> TradeResponse:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     trade_repository.save(trade)
     return to_trade_response(trade)
+
+
+@app.get("/trades/{trade_id}", response_model=TradeResponse)
+def get_trade(trade_id: str) -> TradeResponse:
+    trade = trade_repository.get(trade_id)
+    if trade is None:
+        raise HTTPException(status_code=404, detail="trade not found")
+    return to_trade_response(trade)
+
+
+@app.get("/health", response_model=HealthResponse)
+def health() -> HealthResponse:
+    return HealthResponse(status="ok", db_path=db_path)

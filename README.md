@@ -37,9 +37,11 @@ CI also runs tests on every push and pull request via GitHub Actions.
 Current endpoints:
 
 - `POST /trades`
+- `GET /trades/{trade_id}`
 - `POST /trades/{trade_id}/assign-deposit`
 - `POST /trades/{trade_id}/seed-confirmations` (testing helper endpoint)
 - `POST /trades/{trade_id}/refresh-funding`
+- `GET /health`
 
 The API now persists trades to SQLite (`data/trades.db` by default).
 Override with `ROBOSATS_XMR_DB_PATH` for tests or alternate environments.

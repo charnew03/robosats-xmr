@@ -13,6 +13,8 @@ class TradeRepository(Protocol):
 
     def get(self, trade_id: str) -> Trade | None: ...
 
+    def list_all(self) -> list[Trade]: ...
+
 
 @dataclass
 class InMemoryTradeRepository:
@@ -24,6 +26,9 @@ class InMemoryTradeRepository:
 
     def get(self, trade_id: str) -> Trade | None:
         return self._trades.get(trade_id)
+
+    def list_all(self) -> list[Trade]:
+        return list(self._trades.values())
 
 
 @dataclass
@@ -123,3 +128,32 @@ class SQLiteTradeRepository:
             created_at=datetime.fromisoformat(row[9]),
             updated_at=datetime.fromisoformat(row[10]),
         )
+
+    def list_all(self) -> list[Trade]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    trade_id, state, amount_xmr, seller_id, buyer_id,
+                    deposit_address, required_confirmations, current_confirmations,
+                    funded_at, created_at, updated_at
+                FROM trades
+                """
+            ).fetchall()
+
+        return [
+            Trade(
+                trade_id=row[0],
+                state=TradeState(row[1]),
+                amount_xmr=row[2],
+                seller_id=row[3],
+                buyer_id=row[4],
+                deposit_address=row[5],
+                required_confirmations=row[6],
+                current_confirmations=row[7],
+                funded_at=datetime.fromisoformat(row[8]) if row[8] else None,
+                created_at=datetime.fromisoformat(row[9]),
+                updated_at=datetime.fromisoformat(row[10]),
+            )
+            for row in rows
+        ]

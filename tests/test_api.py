@@ -53,3 +53,29 @@ def test_full_funding_flow_end_to_end() -> None:
 def test_assign_deposit_missing_trade_returns_404() -> None:
     response = client.post("/trades/not-real/assign-deposit")
     assert response.status_code == 404
+
+
+def test_get_trade_endpoint_returns_saved_trade() -> None:
+    create_response = client.post(
+        "/trades",
+        json={
+            "amount_xmr": 0.22,
+            "seller_id": "seller-get-1",
+            "required_confirmations": 10,
+        },
+    )
+    trade_id = create_response.json()["trade_id"]
+
+    get_response = client.get(f"/trades/{trade_id}")
+    assert get_response.status_code == 200
+    payload = get_response.json()
+    assert payload["trade_id"] == trade_id
+    assert payload["state"] == "CREATED"
+
+
+def test_health_endpoint_returns_ok() -> None:
+    response = client.get("/health")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["db_path"]
