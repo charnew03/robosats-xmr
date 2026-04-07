@@ -24,6 +24,14 @@ Build and deploy an MVP peer-to-peer trading platform using Monero settlement fl
 - `docs/MILESTONES.md`: phased roadmap with deliverables.
 - `docs/TESTING.md`: testing strategy and quality gates.
 
+## Local Test Quickstart
+
+1. Install Python 3.11+.
+2. Run `python -m pip install -r requirements-dev.txt`.
+3. Run `pytest -q`.
+
+CI also runs tests on every push and pull request via GitHub Actions.
+
 ## Working Agreement
 
 No phase is marked complete unless required tests and checklists in `docs/TESTING.md` are green.
