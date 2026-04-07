@@ -66,6 +66,12 @@ Wallet mode:
 - Build and run: `docker compose up --build`
 - API available at: `http://127.0.0.1:8000`
 
+## Background Funding Watcher
+
+- Run watcher loop: `python -m backend.watcher_main`
+- Configure interval with `ROBOSATS_XMR_WATCHER_INTERVAL_SECONDS` (default `10`)
+- Uses the same wallet mode environment variables as the API.
+
 ## Working Agreement
 
 No phase is marked complete unless required tests and checklists in `docs/TESTING.md` are green.

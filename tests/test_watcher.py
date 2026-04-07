@@ -1,6 +1,6 @@
 from backend.repository import InMemoryTradeRepository
 from backend.trade_engine import Trade, TradeState
-from backend.watcher import run_funding_refresh_once
+from backend.watcher import run_funding_refresh_loop, run_funding_refresh_once
 
 
 class FakeWalletRPC:
@@ -36,3 +36,22 @@ def test_watcher_processes_only_pending_funded_candidates() -> None:
     assert refreshed.state == TradeState.FUNDED
     assert stats.processed == 1
     assert stats.funded_now == 1
+
+
+def test_watcher_loop_aggregates_stats() -> None:
+    repo = InMemoryTradeRepository()
+    trade = Trade(trade_id="loop1", amount_xmr=0.1, seller_id="s1")
+    trade.assign_deposit_address("48xmrloop1")
+    repo.save(trade)
+
+    wallet = FakeWalletRPC(confirmations_by_address={"48xmrloop1": 10})
+    loop_stats = run_funding_refresh_loop(
+        repository=repo,
+        wallet_rpc=wallet,
+        interval_seconds=0,
+        max_iterations=2,
+    )
+
+    assert loop_stats.iterations == 2
+    assert loop_stats.processed_total == 1
+    assert loop_stats.funded_total == 1

@@ -8,6 +8,7 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from backend.fake_wallet import FakeWalletFundingRPC
 from backend.funding_service import assign_trade_deposit, refresh_trade_funding
 from backend.monero_rpc import MoneroWalletRPC
 from backend.repository import SQLiteTradeRepository, TradeRepository
@@ -40,19 +41,6 @@ class TradeResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     db_path: str
-
-
-class FakeWalletFundingRPC:
-    def __init__(self) -> None:
-        self.confirmations_by_address: dict[str, int] = {}
-
-    def generate_subaddress(self, trade_id: str) -> str:
-        address = f"48xmr{trade_id[:8]}{len(self.confirmations_by_address) + 1}"
-        self.confirmations_by_address.setdefault(address, 0)
-        return address
-
-    def get_confirmations(self, address: str) -> int:
-        return self.confirmations_by_address.get(address, 0)
 
 
 def to_trade_response(trade: Trade) -> TradeResponse:
