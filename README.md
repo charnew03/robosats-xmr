@@ -46,6 +46,15 @@ Current endpoints:
 The API now persists trades to SQLite (`data/trades.db` by default).
 Override with `ROBOSATS_XMR_DB_PATH` for tests or alternate environments.
 
+Wallet mode:
+
+- default dev mode: fake wallet RPC (`ROBOSATS_XMR_USE_FAKE_WALLET=true`)
+- real wallet mode: set `ROBOSATS_XMR_USE_FAKE_WALLET=false` and configure:
+  - `MONERO_WALLET_RPC_URL`
+  - `MONERO_WALLET_RPC_USER`
+  - `MONERO_WALLET_RPC_PASSWORD`
+  - `MONERO_WALLET_ACCOUNT_INDEX` (optional, defaults to `0`)
+
 ## Working Agreement
 
 No phase is marked complete unless required tests and checklists in `docs/TESTING.md` are green.

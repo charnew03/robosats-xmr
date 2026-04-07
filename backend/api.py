@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.funding_service import assign_trade_deposit, refresh_trade_funding
+from backend.monero_rpc import MoneroWalletRPC
 from backend.repository import SQLiteTradeRepository, TradeRepository
 from backend.trade_engine import Trade
 
@@ -72,7 +73,16 @@ app = FastAPI(title="robosats-xmr API")
 db_path = os.getenv("ROBOSATS_XMR_DB_PATH", "data/trades.db")
 Path(db_path).parent.mkdir(parents=True, exist_ok=True)
 trade_repository: TradeRepository = SQLiteTradeRepository(db_path=db_path)
-wallet_rpc = FakeWalletFundingRPC()
+use_fake_wallet = os.getenv("ROBOSATS_XMR_USE_FAKE_WALLET", "true").lower() == "true"
+if use_fake_wallet:
+    wallet_rpc = FakeWalletFundingRPC()
+else:
+    wallet_rpc = MoneroWalletRPC(
+        base_url=os.getenv("MONERO_WALLET_RPC_URL", "http://127.0.0.1:18083"),
+        username=os.getenv("MONERO_WALLET_RPC_USER", ""),
+        password=os.getenv("MONERO_WALLET_RPC_PASSWORD", ""),
+        account_index=int(os.getenv("MONERO_WALLET_ACCOUNT_INDEX", "0")),
+    )
 
 
 @app.post("/trades", response_model=TradeResponse)
