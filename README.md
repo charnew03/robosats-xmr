@@ -32,6 +32,15 @@ Build and deploy an MVP peer-to-peer trading platform using Monero settlement fl
 
 CI also runs tests on every push and pull request via GitHub Actions.
 
+## API Slice (Phase 1.5)
+
+Current endpoints:
+
+- `POST /trades`
+- `POST /trades/{trade_id}/assign-deposit`
+- `POST /trades/{trade_id}/seed-confirmations` (testing helper endpoint)
+- `POST /trades/{trade_id}/refresh-funding`
+
 ## Working Agreement
 
 No phase is marked complete unless required tests and checklists in `docs/TESTING.md` are green.
