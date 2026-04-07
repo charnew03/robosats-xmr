@@ -1,0 +1,11 @@
+services:
+  api:
+    build: .
+    container_name: robosats-xmr-api
+    ports:
+      - "8000:8000"
+    environment:
+      ROBOSATS_XMR_DB_PATH: /app/data/trades.db
+      ROBOSATS_XMR_USE_FAKE_WALLET: "true"
+    volumes:
+      - ./data:/app/data

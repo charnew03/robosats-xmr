@@ -55,6 +55,17 @@ Wallet mode:
   - `MONERO_WALLET_RPC_PASSWORD`
   - `MONERO_WALLET_ACCOUNT_INDEX` (optional, defaults to `0`)
 
+## Run API Locally
+
+- Install runtime deps: `python -m pip install -r requirements.txt`
+- Start API: `uvicorn backend.main:app --reload`
+- Open docs: `http://127.0.0.1:8000/docs`
+
+## Run with Docker
+
+- Build and run: `docker compose up --build`
+- API available at: `http://127.0.0.1:8000`
+
 ## Working Agreement
 
 No phase is marked complete unless required tests and checklists in `docs/TESTING.md` are green.
