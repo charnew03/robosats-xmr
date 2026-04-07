@@ -41,6 +41,9 @@ Current endpoints:
 - `POST /trades/{trade_id}/seed-confirmations` (testing helper endpoint)
 - `POST /trades/{trade_id}/refresh-funding`
 
+The API now persists trades to SQLite (`data/trades.db` by default).
+Override with `ROBOSATS_XMR_DB_PATH` for tests or alternate environments.
+
 ## Working Agreement
 
 No phase is marked complete unless required tests and checklists in `docs/TESTING.md` are green.

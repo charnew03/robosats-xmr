@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime
+import os
+from pathlib import Path
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.funding_service import assign_trade_deposit, refresh_trade_funding
-from backend.repository import InMemoryTradeRepository
+from backend.repository import SQLiteTradeRepository, TradeRepository
 from backend.trade_engine import Trade
 
 
@@ -62,7 +64,9 @@ def to_trade_response(trade: Trade) -> TradeResponse:
 
 
 app = FastAPI(title="robosats-xmr API")
-trade_repository = InMemoryTradeRepository()
+db_path = os.getenv("ROBOSATS_XMR_DB_PATH", "data/trades.db")
+Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+trade_repository: TradeRepository = SQLiteTradeRepository(db_path=db_path)
 wallet_rpc = FakeWalletFundingRPC()
 
 
@@ -85,6 +89,7 @@ def assign_deposit(trade_id: str) -> TradeResponse:
     if trade is None:
         raise HTTPException(status_code=404, detail="trade not found")
     assign_trade_deposit(trade, wallet_rpc)
+    trade_repository.save(trade)
     return to_trade_response(trade)
 
 
@@ -108,4 +113,5 @@ def refresh_funding(trade_id: str) -> TradeResponse:
         refresh_trade_funding(trade, wallet_rpc)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    trade_repository.save(trade)
     return to_trade_response(trade)
