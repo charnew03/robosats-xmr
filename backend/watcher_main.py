@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
@@ -10,6 +11,10 @@ from backend.watcher import run_funding_refresh_loop
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=os.getenv("ROBOSATS_XMR_LOG_LEVEL", "INFO"),
+        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+    )
     db_path = os.getenv("ROBOSATS_XMR_DB_PATH", "data/trades.db")
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     repository = SQLiteTradeRepository(db_path=db_path)

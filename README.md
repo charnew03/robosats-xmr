@@ -71,6 +71,8 @@ Wallet mode:
 - Run watcher loop: `python -m backend.watcher_main`
 - Configure interval with `ROBOSATS_XMR_WATCHER_INTERVAL_SECONDS` (default `10`)
 - Uses the same wallet mode environment variables as the API.
+- The watcher automatically marks `FUNDS_PENDING` trades as `FUNDED` once confirmations reach the trade threshold (10 by default).
+- Funded trades are skipped on later polls, so only pending deposits continue to be refreshed.
 
 ## Hardening (started early)
 

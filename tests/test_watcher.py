@@ -55,3 +55,22 @@ def test_watcher_loop_aggregates_stats() -> None:
     assert loop_stats.iterations == 2
     assert loop_stats.processed_total == 1
     assert loop_stats.funded_total == 1
+
+
+def test_watcher_skips_already_funded_trade_on_later_polls() -> None:
+    repo = InMemoryTradeRepository()
+    trade = Trade(trade_id="skip1", amount_xmr=0.1, seller_id="s1")
+    trade.assign_deposit_address("48xmrskip1")
+    repo.save(trade)
+
+    wallet = FakeWalletRPC(confirmations_by_address={"48xmrskip1": 12})
+    first_run = run_funding_refresh_once(repo, wallet)
+    second_run = run_funding_refresh_once(repo, wallet)
+
+    refreshed = repo.get("skip1")
+    assert refreshed is not None
+    assert refreshed.state == TradeState.FUNDED
+    assert first_run.processed == 1
+    assert first_run.funded_now == 1
+    assert second_run.processed == 0
+    assert second_run.funded_now == 0

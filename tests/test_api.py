@@ -53,6 +53,12 @@ def test_full_funding_flow_end_to_end(client: TestClient) -> None:
     assert refresh_response.json()["state"] == "FUNDED"
     assert refresh_response.json()["current_confirmations"] == 10
 
+    # Re-refresh should be stable and return the same funded status.
+    refresh_again = client.post(f"/trades/{trade_id}/refresh-funding")
+    assert refresh_again.status_code == 200
+    assert refresh_again.json()["state"] == "FUNDED"
+    assert refresh_again.json()["current_confirmations"] == 10
+
 
 def test_assign_deposit_missing_trade_returns_404(client: TestClient) -> None:
     response = client.post("/trades/not-real/assign-deposit")
