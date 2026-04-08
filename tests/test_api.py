@@ -160,7 +160,11 @@ def test_phase2_happy_path_with_new_endpoint_names(client: TestClient) -> None:
     )
     trade_id = create_response.json()["trade_id"]
 
-    client.post(f"/trades/{trade_id}/assign-deposit")
+    assign = client.post(f"/trades/{trade_id}/assign-deposit")
+    assert assign.status_code == 200
+    deposit_address = assign.json()["deposit_address"]
+    assert deposit_address
+
     client.post(f"/trades/{trade_id}/seed-confirmations", json={"confirmations": 10})
     funded = client.post(f"/trades/{trade_id}/refresh-funding")
     assert funded.status_code == 200
@@ -170,14 +174,26 @@ def test_phase2_happy_path_with_new_endpoint_names(client: TestClient) -> None:
     assert fiat_response.status_code == 200
     assert fiat_response.json()["state"] == "FIAT_MARKED_PAID"
 
+    buyer_payout = "48xmrBuyerPayoutPhase2"
     release_response = client.post(
         f"/trades/{trade_id}/release-escrow",
-        json={"buyer_payout_address": "48xmrBuyerPayoutPhase2"},
+        json={"buyer_payout_address": buyer_payout},
     )
     assert release_response.status_code == 200
     release_payload = release_response.json()
     assert release_payload["state"] == "RELEASED"
-    assert release_payload["release_txid"]
+    txid = release_payload["release_txid"]
+    assert txid
+    assert deposit_address[:16] in txid
+    assert buyer_payout[:12] in txid
+    assert "0.6" in txid
+
+    persisted = client.get(f"/trades/{trade_id}")
+    assert persisted.status_code == 200
+    body = persisted.json()
+    assert body["state"] == "RELEASED"
+    assert body["release_txid"] == txid
+    assert body["buyer_payout_address"] == buyer_payout
 
 
 def test_phase2_open_dispute_freezes_trade(client: TestClient) -> None:
@@ -206,6 +222,15 @@ def test_phase2_open_dispute_freezes_trade(client: TestClient) -> None:
     payload = dispute_response.json()
     assert payload["state"] == "DISPUTED"
     assert payload["dispute_reason"] == "payment mismatch"
+
+    blocked_fiat = client.post(f"/trades/{trade_id}/mark-fiat-paid")
+    assert blocked_fiat.status_code == 400
+
+    blocked_release = client.post(
+        f"/trades/{trade_id}/release-escrow",
+        json={"buyer_payout_address": "48xmrBuyerBlocked"},
+    )
+    assert blocked_release.status_code == 400
 
 
 def test_dispute_and_moderator_resolve_refund(client: TestClient) -> None:

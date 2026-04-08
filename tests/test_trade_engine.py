@@ -73,3 +73,23 @@ def test_open_dispute_sets_reason_and_state() -> None:
     assert trade.state == TradeState.DISPUTED
     assert trade.dispute_reason == "did not receive fiat"
     assert trade.dispute_opened_at is not None
+
+
+def test_mark_fiat_paid_requires_funded_state() -> None:
+    trade = Trade(trade_id="t-7", amount_xmr=0.1, seller_id="seller-7")
+    trade.assign_deposit_address("48xmrAddressTrade7")
+
+    with pytest.raises(ValueError, match="FUNDED"):
+        trade.mark_fiat_paid()
+
+
+def test_set_release_from_disputed_for_moderator_path() -> None:
+    trade = Trade(trade_id="t-8", amount_xmr=0.15, seller_id="seller-8")
+    trade.assign_deposit_address("48xmrAddressTrade8")
+    trade.record_confirmations(10)
+    trade.open_dispute("needs moderator")
+
+    trade.set_release("48xmrBuyerMod", "tx-mod-1")
+
+    assert trade.state == TradeState.RELEASED
+    assert trade.release_txid == "tx-mod-1"

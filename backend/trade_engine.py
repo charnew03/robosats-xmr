@@ -9,6 +9,7 @@ class TradeState(StrEnum):
     CREATED = "CREATED"
     FUNDS_PENDING = "FUNDS_PENDING"
     FUNDED = "FUNDED"
+    # Phase 2 settlement / dispute states (see ALLOWED_TRANSITIONS).
     FIAT_MARKED_PAID = "FIAT_MARKED_PAID"
     RELEASED = "RELEASED"
     CANCELLED = "CANCELLED"
@@ -91,11 +92,19 @@ class Trade:
         return self.transition(TradeState.CANCELLED, reason=reason)
 
     def mark_fiat_paid(self) -> TradeEvent:
+        # Phase 2: buyer may signal fiat only after escrow is final on-chain.
+        if self.state != TradeState.FUNDED:
+            raise ValueError("trade must be FUNDED to mark fiat paid")
         return self.transition(TradeState.FIAT_MARKED_PAID, reason="fiat marked paid")
 
     def open_dispute(self, reason: str) -> TradeEvent:
         if not reason:
             raise ValueError("dispute reason cannot be empty")
+        # Phase 2: freeze settlement while funded or after fiat marked (before release).
+        if self.state not in (TradeState.FUNDED, TradeState.FIAT_MARKED_PAID):
+            raise ValueError(
+                "trade must be FUNDED or FIAT_MARKED_PAID to open a dispute"
+            )
         self.dispute_reason = reason
         self.dispute_opened_at = datetime.now(UTC)
         return self.transition(TradeState.DISPUTED, reason="dispute opened")
@@ -118,6 +127,11 @@ class Trade:
             raise ValueError("payout address cannot be empty")
         if not txid:
             raise ValueError("txid cannot be empty")
+        # Normal settlement: FIAT_MARKED_PAID → RELEASED. Moderator may release from DISPUTED.
+        if self.state not in (TradeState.FIAT_MARKED_PAID, TradeState.DISPUTED):
+            raise ValueError(
+                "trade must be FIAT_MARKED_PAID or DISPUTED to record a release"
+            )
         self.buyer_payout_address = payout_address
         self.release_txid = txid
         self.transition(TradeState.RELEASED, reason="released")

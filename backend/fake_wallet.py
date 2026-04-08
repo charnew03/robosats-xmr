@@ -17,3 +17,17 @@ class FakeWalletFundingRPC:
         if not address or amount_xmr <= 0:
             raise ValueError("invalid send parameters")
         return f"fake-txid-{address[:6]}-{amount_xmr}"
+
+    def release_escrow_to_buyer(
+        self, deposit_subaddress: str, buyer_address: str, amount_xmr: float
+    ) -> str:
+        """Simulate spending from the trade deposit subaddress to the buyer."""
+        if not deposit_subaddress or not buyer_address or amount_xmr <= 0:
+            raise ValueError("invalid escrow release parameters")
+        if deposit_subaddress not in self.confirmations_by_address:
+            raise ValueError("unknown deposit subaddress for fake wallet")
+        # Include from/to and exact amount so tests can assert end-to-end behavior.
+        return (
+            f"fake-escrow-from-{deposit_subaddress[:16]}-"
+            f"to-{buyer_address[:12]}-amt-{amount_xmr}"
+        )

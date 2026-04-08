@@ -5,7 +5,7 @@ Monero-focused fork project inspired by RoboSats.
 ## Status
 
 - ✅ Phase 1 (Core trade creation, deposit assignment, funding & status handling) — COMPLETE
-- Phase 2 (settlement + disputes) remains outside this completed Phase 1 scope.
+- Phase 2 (settlement + disputes) — IN PROGRESS (basic endpoints and tests; see `docs/TESTING.md`).
 
 ## Objective
 
@@ -70,6 +70,8 @@ Phase 1 now supports:
 - Deposit address assignment and pending-funding tracking.
 - Manual and watcher-based funding detection with automatic `FUNDED` transition.
 - Basic trade read/list endpoints for lifecycle visibility.
+
+Phase 2 (initial): `POST .../mark-fiat-paid`, `POST .../release-escrow`, and `POST .../open-dispute` for `FUNDED` → `FIAT_MARKED_PAID` → `RELEASED` (fake-wallet escrow release is testable end-to-end) and dispute freeze from `FUNDED` or `FIAT_MARKED_PAID`.
 
 ## Run API Locally
 

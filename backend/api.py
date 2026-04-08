@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 import os
 from pathlib import Path
 from uuid import uuid4
@@ -16,6 +17,10 @@ from backend.repository import SQLiteTradeRepository, TradeRepository
 from backend.risk_limits import RiskLimits, enforce_seller_open_trade_limit
 from backend.rate_limit import RateLimiter
 from backend.trade_engine import Trade, TradeState
+from backend.wallet_adapter import release_escrow_to_buyer
+
+
+logger = logging.getLogger(__name__)
 
 
 class CreateTradeRequest(BaseModel):
@@ -220,12 +225,14 @@ def create_app(
         if trade is None:
             raise HTTPException(status_code=404, detail="trade not found")
         try:
-            if trade.state != TradeState.FUNDED:
-                raise ValueError("trade must be FUNDED to mark fiat paid")
             trade.mark_fiat_paid()
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         trade_repository.save(trade)
+        logger.info(
+            "Phase2 mark-fiat-paid: trade=%s -> FIAT_MARKED_PAID",
+            trade_id,
+        )
         if hasattr(trade_repository, "add_audit_event"):
             trade_repository.add_audit_event(
                 trade_id, trade.buyer_id or "buyer", "fiat_marked_paid", None
@@ -236,14 +243,39 @@ def create_app(
         trade = trade_repository.get(trade_id)
         if trade is None:
             raise HTTPException(status_code=404, detail="trade not found")
+        # Seller settlement path only; DISPUTED trades stay frozen here (moderator uses
+        # a separate resolve endpoint that may call set_release).
+        if trade.state != TradeState.FIAT_MARKED_PAID:
+            raise HTTPException(
+                status_code=400,
+                detail="trade must be FIAT_MARKED_PAID to release escrow",
+            )
+        if trade.deposit_address is None:
+            raise HTTPException(
+                status_code=400, detail="trade has no deposit address for escrow release"
+            )
         try:
-            if trade.state != TradeState.FIAT_MARKED_PAID:
-                raise ValueError("trade must be FIAT_MARKED_PAID to release")
-            txid = wallet_rpc.send_xmr(payload.buyer_payout_address, trade.amount_xmr)
+            # Wallet sends the exact trade notional toward the buyer; fake wallet simulates
+            # from the deposit subaddress; real RPC prefers subaddr_indices when known.
+            txid = release_escrow_to_buyer(
+                wallet_rpc,
+                trade.deposit_address,
+                payload.buyer_payout_address,
+                trade.amount_xmr,
+            )
             trade.set_release(payload.buyer_payout_address, txid)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=502, detail=f"wallet release failed: {exc}"
+            ) from exc
         trade_repository.save(trade)
+        logger.info(
+            "Phase2 release-escrow: trade=%s txid=%s -> RELEASED",
+            trade_id,
+            txid,
+        )
         if hasattr(trade_repository, "add_audit_event"):
             trade_repository.add_audit_event(
                 trade_id, trade.seller_id, "release_escrow", txid
@@ -255,12 +287,15 @@ def create_app(
         if trade is None:
             raise HTTPException(status_code=404, detail="trade not found")
         try:
-            if trade.state not in (TradeState.FUNDED, TradeState.FIAT_MARKED_PAID):
-                raise ValueError("trade must be FUNDED or FIAT_MARKED_PAID to dispute")
             trade.open_dispute(payload.reason)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         trade_repository.save(trade)
+        logger.info(
+            "Phase2 open-dispute: trade=%s reason=%r -> DISPUTED (settlement frozen)",
+            trade_id,
+            payload.reason[:80] if payload.reason else "",
+        )
         if hasattr(trade_repository, "add_audit_event"):
             trade_repository.add_audit_event(
                 trade_id, trade.seller_id, "dispute_opened", payload.reason
