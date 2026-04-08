@@ -42,13 +42,6 @@ class DisputeRequest(BaseModel):
     reason: str = Field(min_length=1)
 
 
-class ModeratorResolveRequest(BaseModel):
-    moderator_id: str = Field(min_length=1)
-    outcome: str = Field(pattern="^(release|refund)$")
-    address: str = Field(min_length=1)
-    note: str | None = None
-
-
 class TradeResponse(BaseModel):
     trade_id: str
     state: str
@@ -224,6 +217,11 @@ def create_app(
         trade = trade_repository.get(trade_id)
         if trade is None:
             raise HTTPException(status_code=404, detail="trade not found")
+        if trade.state in (TradeState.RELEASED, TradeState.DISPUTED):
+            raise HTTPException(
+                status_code=400,
+                detail="trade is RELEASED or DISPUTED; no further settlement actions",
+            )
         try:
             trade.mark_fiat_paid()
         except ValueError as exc:
@@ -243,8 +241,12 @@ def create_app(
         trade = trade_repository.get(trade_id)
         if trade is None:
             raise HTTPException(status_code=404, detail="trade not found")
-        # Seller settlement path only; DISPUTED trades stay frozen here (moderator uses
-        # a separate resolve endpoint that may call set_release).
+        if trade.state in (TradeState.RELEASED, TradeState.DISPUTED):
+            raise HTTPException(
+                status_code=400,
+                detail="trade is RELEASED or DISPUTED; no further settlement actions",
+            )
+        # Seller settlement path only; must be FIAT_MARKED_PAID.
         if trade.state != TradeState.FIAT_MARKED_PAID:
             raise HTTPException(
                 status_code=400,
@@ -286,6 +288,16 @@ def create_app(
         trade = trade_repository.get(trade_id)
         if trade is None:
             raise HTTPException(status_code=404, detail="trade not found")
+        if trade.state == TradeState.RELEASED:
+            raise HTTPException(
+                status_code=400,
+                detail="trade is RELEASED; no further settlement actions",
+            )
+        if trade.state == TradeState.DISPUTED:
+            raise HTTPException(
+                status_code=400,
+                detail="trade is already DISPUTED",
+            )
         try:
             trade.open_dispute(payload.reason)
         except ValueError as exc:
@@ -299,32 +311,6 @@ def create_app(
         if hasattr(trade_repository, "add_audit_event"):
             trade_repository.add_audit_event(
                 trade_id, trade.seller_id, "dispute_opened", payload.reason
-            )
-        return to_trade_response(trade)
-
-    @app.post("/trades/{trade_id}/moderator/resolve", response_model=TradeResponse)
-    def moderator_resolve(
-        trade_id: str, payload: ModeratorResolveRequest
-    ) -> TradeResponse:
-        trade = trade_repository.get(trade_id)
-        if trade is None:
-            raise HTTPException(status_code=404, detail="trade not found")
-        try:
-            if trade.state != TradeState.DISPUTED:
-                raise ValueError("trade must be DISPUTED to resolve")
-            txid = wallet_rpc.send_xmr(payload.address, trade.amount_xmr)
-            if payload.outcome == "release":
-                trade.set_release(payload.address, txid)
-                action = "moderator_release"
-            else:
-                trade.set_refund(payload.address, txid)
-                action = "moderator_refund"
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        trade_repository.save(trade)
-        if hasattr(trade_repository, "add_audit_event"):
-            trade_repository.add_audit_event(
-                trade_id, payload.moderator_id, action, payload.note or txid
             )
         return to_trade_response(trade)
 

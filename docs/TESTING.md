@@ -70,12 +70,14 @@ No milestone is complete until tests for that milestone pass locally and evidenc
 - [x] `POST /trades/{trade_id}/refresh-funding` returns consistent `state` and `current_confirmations`.
 - [x] `pytest -q` is green before Phase 1.5 is marked complete.
 
-## Phase 2 Settlement + Disputes Checklist (Partially complete — in progress)
+## Phase 2 Settlement + Disputes Checklist
 
-- [x] Trade model includes `FIAT_MARKED_PAID`, `RELEASED`, and `DISPUTED` with guarded transitions in `trade_engine`.
-- [x] `POST /trades/{trade_id}/mark-fiat-paid` moves trade from `FUNDED` to `FIAT_MARKED_PAID` (rejects other states).
-- [x] `POST /trades/{trade_id}/release-escrow` moves trade from `FIAT_MARKED_PAID` to `RELEASED` via `wallet_adapter.release_escrow_to_buyer` (fake + real RPC shape).
-- [x] `POST /trades/{trade_id}/open-dispute` moves `FUNDED` or `FIAT_MARKED_PAID` trade to `DISPUTED` and blocks further settlement actions.
-- [x] Basic audit events for fiat-paid, release-escrow, and dispute-opened.
-- [x] Integration tests: happy path (fund → fiat → release with fake escrow txid) and dispute freeze.
-- [ ] Full moderator / resolution flows and production wallet staging checks (deferred within Phase 2 scope).
+- [x] Trade model includes `FIAT_MARKED_PAID`, `RELEASED`, and `DISPUTED` (see `trade_engine.py` and `ALLOWED_TRANSITIONS`).
+- [x] `FUNDED` → `FIAT_MARKED_PAID` only via `mark_fiat_paid`; `FIAT_MARKED_PAID` → `RELEASED` only via `set_release` after `release_escrow_to_buyer`; `FUNDED` or `FIAT_MARKED_PAID` → `DISPUTED` via `open_dispute`.
+- [x] `RELEASED` and `DISPUTED` are terminal for Phase 2 settlement (no transitions out of `DISPUTED` in this phase).
+- [x] `POST /trades/{trade_id}/mark-fiat-paid` validates state, persists, audit + logging.
+- [x] `POST /trades/{trade_id}/release-escrow` validates `FIAT_MARKED_PAID`, calls `wallet_adapter.release_escrow_to_buyer` (fake simulation + real RPC with optional `subaddr_indices`), persists `release_txid`, audit + logging.
+- [x] `POST /trades/{trade_id}/open-dispute` freezes settlement (`mark-fiat-paid`, `release-escrow` rejected); rejects duplicate dispute and post-`RELEASED` attempts.
+- [x] Basic audit events: `fiat_marked_paid`, `release_escrow`, `dispute_opened`.
+- [x] Integration tests: happy path (`FUNDED` → mark-fiat → release-escrow with fake txid); dispute from `FUNDED` and from `FIAT_MARKED_PAID`; invalid transition coverage; persistence of `release_txid` / disputed fields (see `tests/test_repository.py`).
+- [x] `pytest -q` green for Phase 2 paths (per working agreement below).

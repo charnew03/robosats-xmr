@@ -5,7 +5,7 @@ Monero-focused fork project inspired by RoboSats.
 ## Status
 
 - ✅ Phase 1 (Core trade creation, deposit assignment, funding & status handling) — COMPLETE
-- Phase 2 (settlement + disputes) — IN PROGRESS (basic endpoints and tests; see `docs/TESTING.md`).
+- ✅ Phase 2 (settlement + disputes) — COMPLETE (see `docs/TESTING.md` checklist).
 
 ## Objective
 
@@ -42,6 +42,10 @@ Current endpoints:
 - `POST /trades/{trade_id}/assign-deposit`
 - `POST /trades/{trade_id}/seed-confirmations` (testing helper endpoint)
 - `POST /trades/{trade_id}/refresh-funding`
+- `POST /trades/{trade_id}/mark-fiat-paid` (Phase 2)
+- `POST /trades/{trade_id}/release-escrow` (Phase 2; `POST .../release` alias)
+- `POST /trades/{trade_id}/open-dispute` (Phase 2; `POST .../dispute` alias)
+- `GET /trades`
 - `GET /health`
 
 The API now persists trades to SQLite (`data/trades.db` by default).
@@ -71,7 +75,11 @@ Phase 1 now supports:
 - Manual and watcher-based funding detection with automatic `FUNDED` transition.
 - Basic trade read/list endpoints for lifecycle visibility.
 
-Phase 2 (initial): `POST .../mark-fiat-paid`, `POST .../release-escrow`, and `POST .../open-dispute` for `FUNDED` → `FIAT_MARKED_PAID` → `RELEASED` (fake-wallet escrow release is testable end-to-end) and dispute freeze from `FUNDED` or `FIAT_MARKED_PAID`.
+Phase 2 (settlement + disputes):
+
+- `POST /trades/{trade_id}/mark-fiat-paid` — `FUNDED` → `FIAT_MARKED_PAID`.
+- `POST /trades/{trade_id}/release-escrow` — `FIAT_MARKED_PAID` → `RELEASED`; sends the trade `amount_xmr` via `wallet_adapter.release_escrow_to_buyer` (full fake-wallet simulation; real `monero-wallet-rpc` transfer with subaddress scoping when derivable).
+- `POST /trades/{trade_id}/open-dispute` — from `FUNDED` or `FIAT_MARKED_PAID` → `DISPUTED`; settlement actions are blocked; `RELEASED` / `DISPUTED` are terminal for this phase.
 
 ## Run API Locally
 
@@ -94,8 +102,11 @@ Phase 2 (initial): `POST .../mark-fiat-paid`, `POST .../release-escrow`, and `PO
 
 ## Status & Next Steps
 
-- ✅ Phase 1 — COMPLETE | Phase 2 (settlement + disputes) — IN PROGRESS
-- Phase 1 and Phase 1.5 remain complete per the working agreement: required tests and checklists in `docs/TESTING.md` are green.
+- ✅ Phase 1 — COMPLETE | ✅ Phase 2 (settlement + disputes) — COMPLETE
+- Phases 1, 1.5, and 2 are complete per the working agreement: required tests and the Phase 1 / 1.5 / Phase 2 checklists in `docs/TESTING.md` are green.
+- Next: later milestones (e.g. dispute resolution workflows, hardening) without changing the closed Phase 2 scope above.
+
+No phase is marked complete unless tests and checklists in `docs/TESTING.md` are green (see **Working Agreement** below).
 
 ## Hardening (started early)
 

@@ -83,13 +83,21 @@ def test_mark_fiat_paid_requires_funded_state() -> None:
         trade.mark_fiat_paid()
 
 
-def test_set_release_from_disputed_for_moderator_path() -> None:
+def test_disputed_trade_cannot_release_via_set_release() -> None:
     trade = Trade(trade_id="t-8", amount_xmr=0.15, seller_id="seller-8")
     trade.assign_deposit_address("48xmrAddressTrade8")
     trade.record_confirmations(10)
-    trade.open_dispute("needs moderator")
+    trade.open_dispute("needs resolution")
 
-    trade.set_release("48xmrBuyerMod", "tx-mod-1")
+    with pytest.raises(ValueError, match="FIAT_MARKED_PAID"):
+        trade.set_release("48xmrBuyerMod", "tx-mod-1")
 
-    assert trade.state == TradeState.RELEASED
-    assert trade.release_txid == "tx-mod-1"
+
+def test_disputed_state_is_terminal_in_machine() -> None:
+    trade = Trade(trade_id="t-9", amount_xmr=0.11, seller_id="seller-9")
+    trade.assign_deposit_address("48xmrAddressTrade9")
+    trade.record_confirmations(10)
+    trade.open_dispute("frozen")
+
+    with pytest.raises(ValueError, match="Invalid transition"):
+        trade.transition(TradeState.RELEASED, reason="should not work")

@@ -233,42 +233,115 @@ def test_phase2_open_dispute_freezes_trade(client: TestClient) -> None:
     assert blocked_release.status_code == 400
 
 
-def test_dispute_and_moderator_resolve_refund(client: TestClient) -> None:
+def test_phase2_open_dispute_from_fiat_marked_paid_freezes_trade(client: TestClient) -> None:
     create_response = client.post(
         "/trades",
         json={
-            "amount_xmr": 0.7,
-            "seller_id": "seller-api-4",
+            "amount_xmr": 0.55,
+            "seller_id": "seller-phase2-fiat-dispute",
             "required_confirmations": 10,
         },
     )
     trade_id = create_response.json()["trade_id"]
-
     client.post(f"/trades/{trade_id}/assign-deposit")
     client.post(f"/trades/{trade_id}/seed-confirmations", json={"confirmations": 10})
     client.post(f"/trades/{trade_id}/refresh-funding")
+    client.post(f"/trades/{trade_id}/mark-fiat-paid")
 
     dispute_response = client.post(
-        f"/trades/{trade_id}/dispute",
-        json={"reason": "buyer did not pay fiat"},
+        f"/trades/{trade_id}/open-dispute",
+        json={"reason": "fiat issue"},
     )
     assert dispute_response.status_code == 200
     assert dispute_response.json()["state"] == "DISPUTED"
 
-    resolve_response = client.post(
-        f"/trades/{trade_id}/moderator/resolve",
-        json={
-            "moderator_id": "mod-1",
-            "outcome": "refund",
-            "address": "48xmrSellerRefund",
-            "note": "refund to seller",
-        },
+    assert client.post(f"/trades/{trade_id}/release-escrow", json={"buyer_payout_address": "48xmrX"}).status_code == 400
+
+
+def test_phase2_cannot_open_dispute_twice(client: TestClient) -> None:
+    create_response = client.post(
+        "/trades",
+        json={"amount_xmr": 0.33, "seller_id": "seller-phase2-dup", "required_confirmations": 10},
     )
-    assert resolve_response.status_code == 200
-    payload = resolve_response.json()
-    assert payload["state"] == "REFUNDED"
-    assert payload["seller_refund_address"] == "48xmrSellerRefund"
-    assert payload["refund_txid"]
+    trade_id = create_response.json()["trade_id"]
+    client.post(f"/trades/{trade_id}/assign-deposit")
+    client.post(f"/trades/{trade_id}/seed-confirmations", json={"confirmations": 10})
+    client.post(f"/trades/{trade_id}/refresh-funding")
+    assert (
+        client.post(
+            f"/trades/{trade_id}/open-dispute",
+            json={"reason": "first"},
+        ).status_code
+        == 200
+    )
+    dup = client.post(
+        f"/trades/{trade_id}/open-dispute",
+        json={"reason": "second"},
+    )
+    assert dup.status_code == 400
+    assert "already DISPUTED" in dup.json()["detail"]
+
+
+def test_phase2_invalid_transitions_return_400(client: TestClient) -> None:
+    create_response = client.post(
+        "/trades",
+        json={"amount_xmr": 0.25, "seller_id": "seller-phase2-inv", "required_confirmations": 10},
+    )
+    trade_id = create_response.json()["trade_id"]
+
+    # CREATED: cannot mark fiat or release.
+    assert client.post(f"/trades/{trade_id}/mark-fiat-paid").status_code == 400
+    assert (
+        client.post(
+            f"/trades/{trade_id}/release-escrow",
+            json={"buyer_payout_address": "48xmrBuyer"},
+        ).status_code
+        == 400
+    )
+
+    client.post(f"/trades/{trade_id}/assign-deposit")
+    # FUNDS_PENDING: cannot mark fiat or release.
+    assert client.post(f"/trades/{trade_id}/mark-fiat-paid").status_code == 400
+    assert (
+        client.post(
+            f"/trades/{trade_id}/release-escrow",
+            json={"buyer_payout_address": "48xmrBuyer"},
+        ).status_code
+        == 400
+    )
+
+    client.post(f"/trades/{trade_id}/seed-confirmations", json={"confirmations": 10})
+    client.post(f"/trades/{trade_id}/refresh-funding")
+    # FUNDED: cannot release before fiat marked.
+    assert (
+        client.post(
+            f"/trades/{trade_id}/release-escrow",
+            json={"buyer_payout_address": "48xmrBuyer"},
+        ).status_code
+        == 400
+    )
+
+    client.post(f"/trades/{trade_id}/mark-fiat-paid")
+    # FIAT_MARKED_PAID: cannot mark fiat again.
+    assert client.post(f"/trades/{trade_id}/mark-fiat-paid").status_code == 400
+
+    client.post(
+        f"/trades/{trade_id}/release-escrow",
+        json={"buyer_payout_address": "48xmrBuyerFinal"},
+    )
+    # RELEASED: no further settlement.
+    assert client.post(f"/trades/{trade_id}/mark-fiat-paid").status_code == 400
+    assert (
+        client.post(
+            f"/trades/{trade_id}/release-escrow",
+            json={"buyer_payout_address": "48xmrBuyer2"},
+        ).status_code
+        == 400
+    )
+    assert (
+        client.post(f"/trades/{trade_id}/open-dispute", json={"reason": "late"}).status_code
+        == 400
+    )
 
 
 def test_create_trade_enforces_open_trade_limit_per_seller(client: TestClient) -> None:

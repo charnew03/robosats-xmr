@@ -31,14 +31,32 @@ def test_sqlite_repository_persists_release_and_dispute_fields(tmp_path: Path) -
     trade.assign_deposit_address("48xmrPersistAddr2")
     trade.record_confirmations(10)
     trade.mark_fiat_paid()
-    trade.open_dispute("testing dispute persistence")
-    trade.set_refund("48xmrRefundAddr", "txid-123")
+    trade.set_release("48xmrBuyerOut", "txid-release-456")
     repo_one.save(trade)
 
     repo_two = SQLiteTradeRepository(db_path=str(db_path))
     loaded = repo_two.get("persist-2")
 
     assert loaded is not None
-    assert loaded.dispute_reason == "testing dispute persistence"
-    assert loaded.refund_txid == "txid-123"
-    assert loaded.seller_refund_address == "48xmrRefundAddr"
+    assert loaded.state == TradeState.RELEASED
+    assert loaded.buyer_payout_address == "48xmrBuyerOut"
+    assert loaded.release_txid == "txid-release-456"
+
+
+def test_sqlite_repository_persists_disputed_trade(tmp_path: Path) -> None:
+    db_path = tmp_path / "trades3.db"
+    repo_one = SQLiteTradeRepository(db_path=str(db_path))
+
+    trade = Trade(trade_id="persist-3", amount_xmr=0.55, seller_id="seller-persist-3")
+    trade.assign_deposit_address("48xmrPersistAddr3")
+    trade.record_confirmations(10)
+    trade.open_dispute("dispute note")
+    repo_one.save(trade)
+
+    repo_two = SQLiteTradeRepository(db_path=str(db_path))
+    loaded = repo_two.get("persist-3")
+
+    assert loaded is not None
+    assert loaded.state == TradeState.DISPUTED
+    assert loaded.dispute_reason == "dispute note"
+    assert loaded.dispute_opened_at is not None

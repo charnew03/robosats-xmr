@@ -1,5 +1,16 @@
 from __future__ import annotations
 
+"""
+Trade state machine (Phase 1 funding + Phase 2 settlement/disputes).
+
+Phase 2 settlement edges (strict):
+  FUNDED → FIAT_MARKED_PAID (mark fiat) | DISPUTED (open dispute)
+  FIAT_MARKED_PAID → RELEASED (release escrow) | DISPUTED (open dispute)
+  RELEASED / DISPUTED → terminal (no further settlement mutations via API in Phase 2)
+
+REFUNDED remains in the enum for legacy DB rows; no Phase 2 API transitions into it.
+"""
+
 from dataclasses import dataclass, field
 from datetime import datetime, UTC
 from enum import StrEnum
@@ -20,13 +31,9 @@ class TradeState(StrEnum):
 ALLOWED_TRANSITIONS: dict[TradeState, set[TradeState]] = {
     TradeState.CREATED: {TradeState.FUNDS_PENDING, TradeState.CANCELLED},
     TradeState.FUNDS_PENDING: {TradeState.FUNDED, TradeState.CANCELLED},
-    TradeState.FUNDED: {
-        TradeState.FIAT_MARKED_PAID,
-        TradeState.DISPUTED,
-        TradeState.REFUNDED,
-    },
+    TradeState.FUNDED: {TradeState.FIAT_MARKED_PAID, TradeState.DISPUTED},
     TradeState.FIAT_MARKED_PAID: {TradeState.RELEASED, TradeState.DISPUTED},
-    TradeState.DISPUTED: {TradeState.RELEASED, TradeState.REFUNDED},
+    TradeState.DISPUTED: set(),
     TradeState.RELEASED: set(),
     TradeState.CANCELLED: set(),
     TradeState.REFUNDED: set(),
@@ -127,23 +134,12 @@ class Trade:
             raise ValueError("payout address cannot be empty")
         if not txid:
             raise ValueError("txid cannot be empty")
-        # Normal settlement: FIAT_MARKED_PAID → RELEASED. Moderator may release from DISPUTED.
-        if self.state not in (TradeState.FIAT_MARKED_PAID, TradeState.DISPUTED):
-            raise ValueError(
-                "trade must be FIAT_MARKED_PAID or DISPUTED to record a release"
-            )
+        # Phase 2: seller release only after buyer marked fiat (custodial send to buyer).
+        if self.state != TradeState.FIAT_MARKED_PAID:
+            raise ValueError("trade must be FIAT_MARKED_PAID to record a release")
         self.buyer_payout_address = payout_address
         self.release_txid = txid
         self.transition(TradeState.RELEASED, reason="released")
-
-    def set_refund(self, refund_address: str, txid: str) -> None:
-        if not refund_address:
-            raise ValueError("refund address cannot be empty")
-        if not txid:
-            raise ValueError("txid cannot be empty")
-        self.seller_refund_address = refund_address
-        self.refund_txid = txid
-        self.transition(TradeState.REFUNDED, reason="refunded")
 
 
 def should_mark_funded(confirmations: int, required_confirmations: int = 10) -> bool:
