@@ -68,6 +68,11 @@ class Trade:
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     state: TradeState = TradeState.CREATED
     events: list[TradeEvent] = field(default_factory=list)
+    # Phase 3: custodial bond slots (amounts set at creation; addresses at assign-deposit).
+    maker_bond_address: str | None = None
+    taker_bond_address: str | None = None
+    maker_bond_amount: float = 0.01
+    taker_bond_amount: float = 0.01
 
     def transition(self, target_state: TradeState, reason: str) -> TradeEvent:
         if target_state not in ALLOWED_TRANSITIONS[self.state]:

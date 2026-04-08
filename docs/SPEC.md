@@ -106,6 +106,15 @@ Future target:
   - audited outcome
 - Test suite covering core state transitions and error paths.
 
+## Phase 3 (in progress) — Bonds and basic hardening
+
+Custodial MVP extension (no non-custodial or advanced dispute resolution in this slice):
+
+- Distinct subaddresses for **maker (seller) bond** and **taker (buyer) bond**, with configurable amounts at trade creation; addresses allocated at assign-deposit alongside trade escrow.
+- **Risk limits**: e.g. max open trades per seller at creation time.
+- **Stale trade sweeper**: cancel `CREATED` / `FUNDS_PENDING` trades past timeouts; audit-logged.
+- **Collaborative cancel** before `FUNDED` via dedicated API action.
+
 ## Open Questions
 
 - Preferred moderator governance model (single operator vs multi-moderator quorum).

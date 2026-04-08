@@ -81,3 +81,15 @@ No milestone is complete until tests for that milestone pass locally and evidenc
 - [x] Basic audit events: `fiat_marked_paid`, `release_escrow`, `dispute_opened`.
 - [x] Integration tests: happy path (`FUNDED` → mark-fiat → release-escrow with fake txid); dispute from `FUNDED` and from `FIAT_MARKED_PAID`; invalid transition coverage; persistence of `release_txid` / disputed fields (see `tests/test_repository.py`).
 - [x] `pytest -q` green for Phase 2 paths (per working agreement below).
+
+## Phase 3 Bonds + Basic Hardening Checklist (In progress — first slice)
+
+- [x] Maker/taker bond amounts on trade creation; bond subaddresses at `assign-deposit` (wallet / fake wallet).
+- [x] Trade API responses include bond fields (`maker_bond_*`, `taker_bond_*`).
+- [x] Seller open-trade limit enforced at `POST /trades` (`risk_limits`).
+- [x] Stale trade sweeper cancels expired `CREATED` / `FUNDS_PENDING` and writes `sweeper_cancel` audit events (SQLite).
+- [x] Background sweeper runner: `python -m backend.sweeper_main` (`ROBOSATS_XMR_SWEEPER_INTERVAL_SECONDS`).
+- [x] Collaborative cancel: `POST /trades/{trade_id}/cancel` before `FUNDED`, with audit trail.
+- [x] Audit event `bonds_assigned` on assign-deposit.
+- [x] `pytest -q` green including Phase 3 tests.
+- [ ] Further Phase 3: bond funding verification, reconciliation jobs, deeper abuse/adversarial tests.

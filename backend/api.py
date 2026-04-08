@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from backend.bond_service import assign_trade_bonds
 from backend.fake_wallet import FakeWalletFundingRPC
 from backend.funding_service import assign_trade_deposit, refresh_trade_funding
 from backend.monero_rpc import MoneroWalletRPC
@@ -28,6 +29,9 @@ class CreateTradeRequest(BaseModel):
     seller_id: str = Field(min_length=1)
     buyer_id: str | None = None
     required_confirmations: int = Field(default=10, ge=1)
+    # Phase 3: bond notionals (custodial); addresses generated at assign-deposit.
+    maker_bond_amount_xmr: float = Field(default=0.01, gt=0)
+    taker_bond_amount_xmr: float = Field(default=0.01, gt=0)
 
 
 class SeedConfirmationsRequest(BaseModel):
@@ -39,6 +43,13 @@ class ReleaseRequest(BaseModel):
 
 
 class DisputeRequest(BaseModel):
+    reason: str = Field(min_length=1)
+
+
+class CollaborativeCancelRequest(BaseModel):
+    """Phase 3: mutual cancel before trade is funded (CREATED or FUNDS_PENDING only)."""
+
+    actor_id: str = Field(min_length=1)
     reason: str = Field(min_length=1)
 
 
@@ -58,6 +69,10 @@ class TradeResponse(BaseModel):
     refund_txid: str | None = None
     dispute_reason: str | None = None
     dispute_opened_at: datetime | None = None
+    maker_bond_address: str | None = None
+    taker_bond_address: str | None = None
+    maker_bond_amount: float = 0.01
+    taker_bond_amount: float = 0.01
 
 
 class HealthResponse(BaseModel):
@@ -82,6 +97,10 @@ def to_trade_response(trade: Trade) -> TradeResponse:
         refund_txid=trade.refund_txid,
         dispute_reason=trade.dispute_reason,
         dispute_opened_at=trade.dispute_opened_at,
+        maker_bond_address=trade.maker_bond_address,
+        taker_bond_address=trade.taker_bond_address,
+        maker_bond_amount=trade.maker_bond_amount,
+        taker_bond_amount=trade.taker_bond_amount,
     )
 
 
@@ -145,6 +164,8 @@ def create_app(
             seller_id=payload.seller_id,
             buyer_id=payload.buyer_id,
             required_confirmations=payload.required_confirmations,
+            maker_bond_amount=payload.maker_bond_amount_xmr,
+            taker_bond_amount=payload.taker_bond_amount_xmr,
         )
         trade_repository.save(trade)
         return to_trade_response(trade)
@@ -156,7 +177,54 @@ def create_app(
         if trade is None:
             raise HTTPException(status_code=404, detail="trade not found")
         assign_trade_deposit(trade, wallet_rpc)
+        # Phase 3: separate subaddresses for maker (seller) and taker (buyer) bonds.
+        assign_trade_bonds(trade, wallet_rpc)
         trade_repository.save(trade)
+        logger.info(
+            "Phase3 bonds assigned: trade=%s maker_addr=%s taker_addr=%s",
+            trade_id,
+            (trade.maker_bond_address or "")[:20],
+            (trade.taker_bond_address or "")[:20],
+        )
+        if hasattr(trade_repository, "add_audit_event"):
+            trade_repository.add_audit_event(
+                trade_id,
+                trade.seller_id,
+                "bonds_assigned",
+                f"maker_bond={trade.maker_bond_amount} taker_bond={trade.taker_bond_amount}",
+            )
+        return to_trade_response(trade)
+
+
+    @app.post("/trades/{trade_id}/cancel", response_model=TradeResponse)
+    def collaborative_cancel(
+        trade_id: str, payload: CollaborativeCancelRequest
+    ) -> TradeResponse:
+        trade = trade_repository.get(trade_id)
+        if trade is None:
+            raise HTTPException(status_code=404, detail="trade not found")
+        if trade.state not in (TradeState.CREATED, TradeState.FUNDS_PENDING):
+            raise HTTPException(
+                status_code=400,
+                detail="collaborative cancel only allowed before trade is FUNDED",
+            )
+        try:
+            trade.cancel(f"collaborative: {payload.reason}")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        trade_repository.save(trade)
+        logger.info(
+            "Phase3 collaborative cancel: trade=%s actor=%s",
+            trade_id,
+            payload.actor_id,
+        )
+        if hasattr(trade_repository, "add_audit_event"):
+            trade_repository.add_audit_event(
+                trade_id,
+                payload.actor_id,
+                "collaborative_cancel",
+                payload.reason,
+            )
         return to_trade_response(trade)
 
 

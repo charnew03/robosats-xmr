@@ -6,6 +6,7 @@ Monero-focused fork project inspired by RoboSats.
 
 - ✅ Phase 1 (Core trade creation, deposit assignment, funding & status handling) — COMPLETE
 - ✅ Phase 2 (settlement + disputes) — COMPLETE (see `docs/TESTING.md` checklist).
+- Phase 3 (bonds + basic hardening) — IN PROGRESS (first slice: bonds, sweeper runner, collaborative cancel; see `docs/TESTING.md`).
 
 ## Objective
 
@@ -45,6 +46,7 @@ Current endpoints:
 - `POST /trades/{trade_id}/mark-fiat-paid` (Phase 2)
 - `POST /trades/{trade_id}/release-escrow` (Phase 2; `POST .../release` alias)
 - `POST /trades/{trade_id}/open-dispute` (Phase 2; `POST .../dispute` alias)
+- `POST /trades/{trade_id}/cancel` (Phase 3 — collaborative cancel before `FUNDED`)
 - `GET /trades`
 - `GET /health`
 
@@ -81,6 +83,15 @@ Phase 2 (settlement + disputes):
 - `POST /trades/{trade_id}/release-escrow` — `FIAT_MARKED_PAID` → `RELEASED`; sends the trade `amount_xmr` via `wallet_adapter.release_escrow_to_buyer` (full fake-wallet simulation; real `monero-wallet-rpc` transfer with subaddress scoping when derivable).
 - `POST /trades/{trade_id}/open-dispute` — from `FUNDED` or `FIAT_MARKED_PAID` → `DISPUTED`; settlement actions are blocked; `RELEASED` / `DISPUTED` are terminal for this phase.
 
+Phase 3 (first slice):
+
+- **Maker/taker bonds** — amounts set on `POST /trades` (`maker_bond_amount_xmr`, `taker_bond_amount_xmr`, defaults `0.01`); separate subaddresses generated at `assign-deposit` (seller = maker, buyer = taker when present).
+- **Risk limits** — max open trades per seller enforced at trade creation (`ROBOSATS_XMR_MAX_OPEN_TRADES_PER_SELLER`, default `3`).
+- **Stale trade sweeper** — cancels timed-out `CREATED` / `FUNDS_PENDING` trades with audit logging; run periodically via `python -m backend.sweeper_main` (`ROBOSATS_XMR_SWEEPER_INTERVAL_SECONDS`, default `300`).
+- **Collaborative cancel** — `POST .../cancel` while `CREATED` or `FUNDS_PENDING` only.
+
+Some hardening (rate limits, open-trade cap, sweeper module) existed early; Phase 3 wires the **sweeper runner** and adds **bonds + cancel + audit** as above.
+
 ## Run API Locally
 
 - Install runtime deps: `python -m pip install -r requirements.txt`
@@ -100,19 +111,26 @@ Phase 2 (settlement + disputes):
 - The watcher automatically marks `FUNDS_PENDING` trades as `FUNDED` once confirmations reach the trade threshold (10 by default).
 - Funded trades are skipped on later polls, so only pending deposits continue to be refreshed.
 
+## Background Stale Trade Sweeper
+
+- Run sweeper loop: `python -m backend.sweeper_main`
+- Configure interval with `ROBOSATS_XMR_SWEEPER_INTERVAL_SECONDS` (default `300`)
+- Uses `ROBOSATS_XMR_DB_PATH` (same DB as the API).
+- Cancels stale `CREATED` and `FUNDS_PENDING` trades per `backend.sweeper` timeouts; writes `sweeper_cancel` audit rows when using SQLite.
+
 ## Status & Next Steps
 
-- ✅ Phase 1 — COMPLETE | ✅ Phase 2 (settlement + disputes) — COMPLETE
-- Phases 1, 1.5, and 2 are complete per the working agreement: required tests and the Phase 1 / 1.5 / Phase 2 checklists in `docs/TESTING.md` are green.
-- Next: later milestones (e.g. dispute resolution workflows, hardening) without changing the closed Phase 2 scope above.
+- ✅ Phase 1 — COMPLETE | ✅ Phase 2 — COMPLETE | Phase 3 (bonds + basic hardening) — IN PROGRESS
+- Phases 1 and 2 checklists in `docs/TESTING.md` are green; Phase 3 checklist tracks the current hardening slice (also in `docs/TESTING.md`).
+- Next: extend Phase 3 (bond verification, reconciliation, deeper abuse tests) without regressing Phases 1–2.
 
 No phase is marked complete unless tests and checklists in `docs/TESTING.md` are green (see **Working Agreement** below).
 
-## Hardening (started early)
+## Hardening (started early, Phase 3 integration)
 
 - Rate limiting middleware (basic in-memory)
 - Seller open-trade limit (default max 3 open trades)
-- Stale trade sweeper (module only; wiring into runner comes next)
+- Stale trade sweeper module + **`sweeper_main` background runner** (Phase 3)
 
 ## Working Agreement
 

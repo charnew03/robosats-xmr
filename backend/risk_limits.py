@@ -8,6 +8,8 @@ from backend.trade_engine import TradeState
 
 @dataclass(frozen=True)
 class RiskLimits:
+    """Phase 3 hardening: caps concurrent exposure per seller (maker)."""
+
     max_open_trades_per_seller: int = 3
 
 
@@ -27,6 +29,7 @@ def count_open_trades_for_seller(repository: TradeRepository, seller_id: str) ->
 def enforce_seller_open_trade_limit(
     repository: TradeRepository, seller_id: str, limits: RiskLimits
 ) -> None:
+    # Enforced at trade creation (Phase 3); counts non-terminal trades for this seller.
     open_count = count_open_trades_for_seller(repository, seller_id)
     if open_count >= limits.max_open_trades_per_seller:
         raise ValueError("seller has reached max open trades")

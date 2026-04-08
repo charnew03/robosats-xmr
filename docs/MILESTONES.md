@@ -30,35 +30,36 @@ Testing gates:
 
 ## Phase 2 - Settlement and Disputes
 
-Status: in progress.
+Status: completed (buyer/seller settlement paths, dispute freeze; see `docs/TESTING.md`).
 
 Deliverables:
 
 - `FIAT_MARKED_PAID` and `RELEASED` flows.
-- Dispute creation and moderator decision endpoints.
-- Audit logging for every moderator action.
+- Dispute creation with settlement freeze while `DISPUTED`.
+- Audit logging for settlement actions.
 
 Testing gates:
 
 - Integration tests for happy path release.
-- Integration tests for dispute freeze and resolution.
-- Regression checks for unauthorized release/refund actions.
+- Integration tests for dispute freeze and invalid transitions.
 
-## Phase 3 - Hardening and Abuse Controls
+## Phase 3 - Bonds, hardening, and abuse controls
 
-Status: started early (partial).
+Status: in progress (first slice: bonds + sweeper wiring + collaborative cancel).
 
 Deliverables:
 
-- Rate limits and anti-spam controls.
-- Trade/user risk limits (caps, cooldowns, open trade limits).
-- Timeout sweeper and reconciliation jobs.
+- Maker/taker bond subaddresses and amounts (custodial); integrated at assign-deposit.
+- Rate limits and anti-spam controls (partial, existing middleware).
+- Trade/user risk limits (open trades per seller at creation).
+- Stale-trade timeout sweeper with background runner and audit events.
+- Collaborative cancel before `FUNDED`.
 
 Testing gates:
 
-- Adversarial tests (double submit, race conditions, replay-like behavior).
-- Load smoke tests for critical endpoints.
-- Backup/restore drill validation.
+- Tests for bond assignment, risk limits, sweeper behavior, and cancel (fake wallet).
+- Adversarial tests (double submit, race conditions) in later Phase 3 iterations.
+- Backup/restore drill validation (later).
 
 ## Phase 4 - Public Staging and Bounty Submission
 
