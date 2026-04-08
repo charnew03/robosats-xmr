@@ -1,6 +1,6 @@
 # Milestones v0.1
 
-## Phase 0 - Kickoff and Alignment (current)
+## Phase 0 - Kickoff and Alignment (completed)
 
 Deliverables:
 
@@ -13,7 +13,7 @@ Exit criteria:
 
 - All Phase 0 checklist items complete.
 
-## Phase 1 - Vertical Slice (Monero funding path)
+## Phase 1 - Vertical Slice (Monero funding path) (completed)
 
 Deliverables:
 
@@ -30,6 +30,8 @@ Testing gates:
 
 ## Phase 2 - Settlement and Disputes
 
+Status: in progress.
+
 Deliverables:
 
 - `FIAT_MARKED_PAID` and `RELEASED` flows.
@@ -43,6 +45,8 @@ Testing gates:
 - Regression checks for unauthorized release/refund actions.
 
 ## Phase 3 - Hardening and Abuse Controls
+
+Status: started early (partial).
 
 Deliverables:
 

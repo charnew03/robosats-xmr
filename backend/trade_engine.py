@@ -85,6 +85,11 @@ class Trade:
         self.deposit_address = address
         self.transition(TradeState.FUNDS_PENDING, reason="deposit address assigned")
 
+    def cancel(self, reason: str) -> TradeEvent:
+        if not reason:
+            raise ValueError("cancel reason cannot be empty")
+        return self.transition(TradeState.CANCELLED, reason=reason)
+
     def mark_fiat_paid(self) -> TradeEvent:
         return self.transition(TradeState.FIAT_MARKED_PAID, reason="fiat marked paid")
 

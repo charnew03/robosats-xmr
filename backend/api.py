@@ -5,13 +5,16 @@ import os
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from backend.fake_wallet import FakeWalletFundingRPC
 from backend.funding_service import assign_trade_deposit, refresh_trade_funding
 from backend.monero_rpc import MoneroWalletRPC
 from backend.repository import SQLiteTradeRepository, TradeRepository
+from backend.risk_limits import RiskLimits, enforce_seller_open_trade_limit
+from backend.rate_limit import RateLimiter
 from backend.trade_engine import Trade, TradeState
 
 
@@ -24,6 +27,21 @@ class CreateTradeRequest(BaseModel):
 
 class SeedConfirmationsRequest(BaseModel):
     confirmations: int = Field(ge=0)
+
+
+class ReleaseRequest(BaseModel):
+    buyer_payout_address: str = Field(min_length=1)
+
+
+class DisputeRequest(BaseModel):
+    reason: str = Field(min_length=1)
+
+
+class ModeratorResolveRequest(BaseModel):
+    moderator_id: str = Field(min_length=1)
+    outcome: str = Field(pattern="^(release|refund)$")
+    address: str = Field(min_length=1)
+    note: str | None = None
 
 
 class TradeResponse(BaseModel):
@@ -69,174 +87,201 @@ def to_trade_response(trade: Trade) -> TradeResponse:
     )
 
 
-app = FastAPI(title="robosats-xmr API")
-db_path = os.getenv("ROBOSATS_XMR_DB_PATH", "data/trades.db")
-Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-trade_repository: TradeRepository = SQLiteTradeRepository(db_path=db_path)
-use_fake_wallet = os.getenv("ROBOSATS_XMR_USE_FAKE_WALLET", "true").lower() == "true"
-if use_fake_wallet:
-    wallet_rpc = FakeWalletFundingRPC()
-else:
-    wallet_rpc = MoneroWalletRPC(
-        base_url=os.getenv("MONERO_WALLET_RPC_URL", "http://127.0.0.1:18083"),
-        username=os.getenv("MONERO_WALLET_RPC_USER", ""),
-        password=os.getenv("MONERO_WALLET_RPC_PASSWORD", ""),
-        account_index=int(os.getenv("MONERO_WALLET_ACCOUNT_INDEX", "0")),
+def create_app(
+    *,
+    db_path: str | None = None,
+    use_fake_wallet: bool | None = None,
+) -> FastAPI:
+    app = FastAPI(title="robosats-xmr API")
+
+    effective_db_path = db_path or os.getenv("ROBOSATS_XMR_DB_PATH", "data/trades.db")
+    Path(effective_db_path).parent.mkdir(parents=True, exist_ok=True)
+    trade_repository: TradeRepository = SQLiteTradeRepository(db_path=effective_db_path)
+
+    rate_limiter = RateLimiter(
+        max_requests=int(os.getenv("ROBOSATS_XMR_RL_MAX_REQUESTS", "60")),
+        window_seconds=int(os.getenv("ROBOSATS_XMR_RL_WINDOW_SECONDS", "60")),
+    )
+    risk_limits = RiskLimits(
+        max_open_trades_per_seller=int(
+            os.getenv("ROBOSATS_XMR_MAX_OPEN_TRADES_PER_SELLER", "3")
+        )
     )
 
-
-@app.post("/trades", response_model=TradeResponse)
-def create_trade(payload: CreateTradeRequest) -> TradeResponse:
-    trade = Trade(
-        trade_id=str(uuid4()),
-        amount_xmr=payload.amount_xmr,
-        seller_id=payload.seller_id,
-        buyer_id=payload.buyer_id,
-        required_confirmations=payload.required_confirmations,
+    effective_use_fake_wallet = (
+        use_fake_wallet
+        if use_fake_wallet is not None
+        else os.getenv("ROBOSATS_XMR_USE_FAKE_WALLET", "true").lower() == "true"
     )
-    trade_repository.save(trade)
-    return to_trade_response(trade)
-
-
-@app.post("/trades/{trade_id}/assign-deposit", response_model=TradeResponse)
-def assign_deposit(trade_id: str) -> TradeResponse:
-    trade = trade_repository.get(trade_id)
-    if trade is None:
-        raise HTTPException(status_code=404, detail="trade not found")
-    assign_trade_deposit(trade, wallet_rpc)
-    trade_repository.save(trade)
-    return to_trade_response(trade)
-
-
-@app.post("/trades/{trade_id}/seed-confirmations", response_model=TradeResponse)
-def seed_confirmations(trade_id: str, payload: SeedConfirmationsRequest) -> TradeResponse:
-    trade = trade_repository.get(trade_id)
-    if trade is None:
-        raise HTTPException(status_code=404, detail="trade not found")
-    if trade.deposit_address is None:
-        raise HTTPException(status_code=400, detail="trade has no deposit address")
-    if not isinstance(wallet_rpc, FakeWalletFundingRPC):
-        raise HTTPException(
-            status_code=400,
-            detail="seed-confirmations is only available when using the fake wallet",
+    if effective_use_fake_wallet:
+        wallet_rpc = FakeWalletFundingRPC()
+    else:
+        wallet_rpc = MoneroWalletRPC(
+            base_url=os.getenv("MONERO_WALLET_RPC_URL", "http://127.0.0.1:18083"),
+            username=os.getenv("MONERO_WALLET_RPC_USER", ""),
+            password=os.getenv("MONERO_WALLET_RPC_PASSWORD", ""),
+            account_index=int(os.getenv("MONERO_WALLET_ACCOUNT_INDEX", "0")),
         )
-    wallet_rpc.confirmations_by_address[trade.deposit_address] = payload.confirmations
-    return to_trade_response(trade)
 
+    @app.middleware("http")
+    async def rate_limit_middleware(request: Request, call_next):
+        client_ip = request.client.host if request.client else "unknown"
+        key = f"{client_ip}:{request.method}:{request.url.path}"
+        if not rate_limiter.allow(key):
+            return JSONResponse(
+                status_code=429, content={"detail": "rate limit exceeded"}
+            )
+        return await call_next(request)
 
-@app.post("/trades/{trade_id}/refresh-funding", response_model=TradeResponse)
-def refresh_funding(trade_id: str) -> TradeResponse:
-    trade = trade_repository.get(trade_id)
-    if trade is None:
-        raise HTTPException(status_code=404, detail="trade not found")
-    try:
-        refresh_trade_funding(trade, wallet_rpc)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    trade_repository.save(trade)
-    return to_trade_response(trade)
-
-
-@app.post("/trades/{trade_id}/mark-fiat-paid", response_model=TradeResponse)
-def mark_fiat_paid(trade_id: str) -> TradeResponse:
-    trade = trade_repository.get(trade_id)
-    if trade is None:
-        raise HTTPException(status_code=404, detail="trade not found")
-    try:
-        if trade.state != TradeState.FUNDED:
-            raise ValueError("trade must be FUNDED to mark fiat paid")
-        trade.mark_fiat_paid()
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    trade_repository.save(trade)
-    return to_trade_response(trade)
-
-
-class ReleaseRequest(BaseModel):
-    buyer_payout_address: str = Field(min_length=1)
-
-
-@app.post("/trades/{trade_id}/release", response_model=TradeResponse)
-def release(trade_id: str, payload: ReleaseRequest) -> TradeResponse:
-    trade = trade_repository.get(trade_id)
-    if trade is None:
-        raise HTTPException(status_code=404, detail="trade not found")
-    try:
-        if trade.state != TradeState.FIAT_MARKED_PAID:
-            raise ValueError("trade must be FIAT_MARKED_PAID to release")
-        txid = wallet_rpc.send_xmr(payload.buyer_payout_address, trade.amount_xmr)
-        trade.set_release(payload.buyer_payout_address, txid)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    trade_repository.save(trade)
-    if hasattr(trade_repository, "add_audit_event"):
-        trade_repository.add_audit_event(trade_id, trade.seller_id, "release", txid)
-    return to_trade_response(trade)
-
-
-class DisputeRequest(BaseModel):
-    reason: str = Field(min_length=1)
-
-
-@app.post("/trades/{trade_id}/dispute", response_model=TradeResponse)
-def dispute(trade_id: str, payload: DisputeRequest) -> TradeResponse:
-    trade = trade_repository.get(trade_id)
-    if trade is None:
-        raise HTTPException(status_code=404, detail="trade not found")
-    try:
-        if trade.state not in (TradeState.FUNDED, TradeState.FIAT_MARKED_PAID):
-            raise ValueError("trade must be FUNDED or FIAT_MARKED_PAID to dispute")
-        trade.open_dispute(payload.reason)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    trade_repository.save(trade)
-    if hasattr(trade_repository, "add_audit_event"):
-        trade_repository.add_audit_event(
-            trade_id, trade.seller_id, "dispute_opened", payload.reason
+    @app.post("/trades", response_model=TradeResponse)
+    def create_trade(payload: CreateTradeRequest) -> TradeResponse:
+        try:
+            enforce_seller_open_trade_limit(
+                trade_repository, payload.seller_id, risk_limits
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        trade = Trade(
+            trade_id=str(uuid4()),
+            amount_xmr=payload.amount_xmr,
+            seller_id=payload.seller_id,
+            buyer_id=payload.buyer_id,
+            required_confirmations=payload.required_confirmations,
         )
-    return to_trade_response(trade)
+        trade_repository.save(trade)
+        return to_trade_response(trade)
 
 
-class ModeratorResolveRequest(BaseModel):
-    moderator_id: str = Field(min_length=1)
-    outcome: str = Field(pattern="^(release|refund)$")
-    address: str = Field(min_length=1)
-    note: str | None = None
+    @app.post("/trades/{trade_id}/assign-deposit", response_model=TradeResponse)
+    def assign_deposit(trade_id: str) -> TradeResponse:
+        trade = trade_repository.get(trade_id)
+        if trade is None:
+            raise HTTPException(status_code=404, detail="trade not found")
+        assign_trade_deposit(trade, wallet_rpc)
+        trade_repository.save(trade)
+        return to_trade_response(trade)
 
 
-@app.post("/trades/{trade_id}/moderator/resolve", response_model=TradeResponse)
-def moderator_resolve(trade_id: str, payload: ModeratorResolveRequest) -> TradeResponse:
-    trade = trade_repository.get(trade_id)
-    if trade is None:
-        raise HTTPException(status_code=404, detail="trade not found")
-    try:
-        if trade.state != TradeState.DISPUTED:
-            raise ValueError("trade must be DISPUTED to resolve")
-        txid = wallet_rpc.send_xmr(payload.address, trade.amount_xmr)
-        if payload.outcome == "release":
-            trade.set_release(payload.address, txid)
-            action = "moderator_release"
-        else:
-            trade.set_refund(payload.address, txid)
-            action = "moderator_refund"
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    trade_repository.save(trade)
-    if hasattr(trade_repository, "add_audit_event"):
-        trade_repository.add_audit_event(
-            trade_id, payload.moderator_id, action, payload.note or txid
-        )
-    return to_trade_response(trade)
+    @app.post("/trades/{trade_id}/seed-confirmations", response_model=TradeResponse)
+    def seed_confirmations(
+        trade_id: str, payload: SeedConfirmationsRequest
+    ) -> TradeResponse:
+        trade = trade_repository.get(trade_id)
+        if trade is None:
+            raise HTTPException(status_code=404, detail="trade not found")
+        if trade.deposit_address is None:
+            raise HTTPException(status_code=400, detail="trade has no deposit address")
+        if not isinstance(wallet_rpc, FakeWalletFundingRPC):
+            raise HTTPException(
+                status_code=400,
+                detail="seed-confirmations is only available when using the fake wallet",
+            )
+        wallet_rpc.confirmations_by_address[trade.deposit_address] = payload.confirmations
+        return to_trade_response(trade)
 
 
-@app.get("/trades/{trade_id}", response_model=TradeResponse)
-def get_trade(trade_id: str) -> TradeResponse:
-    trade = trade_repository.get(trade_id)
-    if trade is None:
-        raise HTTPException(status_code=404, detail="trade not found")
-    return to_trade_response(trade)
+    @app.post("/trades/{trade_id}/refresh-funding", response_model=TradeResponse)
+    def refresh_funding(trade_id: str) -> TradeResponse:
+        trade = trade_repository.get(trade_id)
+        if trade is None:
+            raise HTTPException(status_code=404, detail="trade not found")
+        try:
+            refresh_trade_funding(trade, wallet_rpc)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        trade_repository.save(trade)
+        return to_trade_response(trade)
 
 
-@app.get("/health", response_model=HealthResponse)
-def health() -> HealthResponse:
-    return HealthResponse(status="ok", db_path=db_path)
+    @app.post("/trades/{trade_id}/mark-fiat-paid", response_model=TradeResponse)
+    def mark_fiat_paid(trade_id: str) -> TradeResponse:
+        trade = trade_repository.get(trade_id)
+        if trade is None:
+            raise HTTPException(status_code=404, detail="trade not found")
+        try:
+            if trade.state != TradeState.FUNDED:
+                raise ValueError("trade must be FUNDED to mark fiat paid")
+            trade.mark_fiat_paid()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        trade_repository.save(trade)
+        return to_trade_response(trade)
+
+
+    @app.post("/trades/{trade_id}/release", response_model=TradeResponse)
+    def release(trade_id: str, payload: ReleaseRequest) -> TradeResponse:
+        trade = trade_repository.get(trade_id)
+        if trade is None:
+            raise HTTPException(status_code=404, detail="trade not found")
+        try:
+            if trade.state != TradeState.FIAT_MARKED_PAID:
+                raise ValueError("trade must be FIAT_MARKED_PAID to release")
+            txid = wallet_rpc.send_xmr(payload.buyer_payout_address, trade.amount_xmr)
+            trade.set_release(payload.buyer_payout_address, txid)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        trade_repository.save(trade)
+        if hasattr(trade_repository, "add_audit_event"):
+            trade_repository.add_audit_event(trade_id, trade.seller_id, "release", txid)
+        return to_trade_response(trade)
+
+    @app.post("/trades/{trade_id}/dispute", response_model=TradeResponse)
+    def dispute(trade_id: str, payload: DisputeRequest) -> TradeResponse:
+        trade = trade_repository.get(trade_id)
+        if trade is None:
+            raise HTTPException(status_code=404, detail="trade not found")
+        try:
+            if trade.state not in (TradeState.FUNDED, TradeState.FIAT_MARKED_PAID):
+                raise ValueError("trade must be FUNDED or FIAT_MARKED_PAID to dispute")
+            trade.open_dispute(payload.reason)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        trade_repository.save(trade)
+        if hasattr(trade_repository, "add_audit_event"):
+            trade_repository.add_audit_event(
+                trade_id, trade.seller_id, "dispute_opened", payload.reason
+            )
+        return to_trade_response(trade)
+
+    @app.post("/trades/{trade_id}/moderator/resolve", response_model=TradeResponse)
+    def moderator_resolve(
+        trade_id: str, payload: ModeratorResolveRequest
+    ) -> TradeResponse:
+        trade = trade_repository.get(trade_id)
+        if trade is None:
+            raise HTTPException(status_code=404, detail="trade not found")
+        try:
+            if trade.state != TradeState.DISPUTED:
+                raise ValueError("trade must be DISPUTED to resolve")
+            txid = wallet_rpc.send_xmr(payload.address, trade.amount_xmr)
+            if payload.outcome == "release":
+                trade.set_release(payload.address, txid)
+                action = "moderator_release"
+            else:
+                trade.set_refund(payload.address, txid)
+                action = "moderator_refund"
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        trade_repository.save(trade)
+        if hasattr(trade_repository, "add_audit_event"):
+            trade_repository.add_audit_event(
+                trade_id, payload.moderator_id, action, payload.note or txid
+            )
+        return to_trade_response(trade)
+
+    @app.get("/trades/{trade_id}", response_model=TradeResponse)
+    def get_trade(trade_id: str) -> TradeResponse:
+        trade = trade_repository.get(trade_id)
+        if trade is None:
+            raise HTTPException(status_code=404, detail="trade not found")
+        return to_trade_response(trade)
+
+
+    @app.get("/health", response_model=HealthResponse)
+    def health() -> HealthResponse:
+        return HealthResponse(status="ok", db_path=effective_db_path)
+
+    return app
+
+
+app = create_app()

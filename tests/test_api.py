@@ -1,12 +1,16 @@
 from fastapi.testclient import TestClient
+import pytest
 
-from backend.api import app
-
-
-client = TestClient(app)
+from backend.api import create_app
 
 
-def test_create_trade_endpoint() -> None:
+@pytest.fixture
+def client(tmp_path) -> TestClient:
+    app = create_app(db_path=str(tmp_path / "test.db"), use_fake_wallet=True)
+    return TestClient(app)
+
+
+def test_create_trade_endpoint(client: TestClient) -> None:
     response = client.post(
         "/trades",
         json={
@@ -22,7 +26,7 @@ def test_create_trade_endpoint() -> None:
     assert payload["seller_id"] == "seller-api-1"
 
 
-def test_full_funding_flow_end_to_end() -> None:
+def test_full_funding_flow_end_to_end(client: TestClient) -> None:
     create_response = client.post(
         "/trades",
         json={
@@ -50,12 +54,12 @@ def test_full_funding_flow_end_to_end() -> None:
     assert refresh_response.json()["current_confirmations"] == 10
 
 
-def test_assign_deposit_missing_trade_returns_404() -> None:
+def test_assign_deposit_missing_trade_returns_404(client: TestClient) -> None:
     response = client.post("/trades/not-real/assign-deposit")
     assert response.status_code == 404
 
 
-def test_get_trade_endpoint_returns_saved_trade() -> None:
+def test_get_trade_endpoint_returns_saved_trade(client: TestClient) -> None:
     create_response = client.post(
         "/trades",
         json={
@@ -73,7 +77,7 @@ def test_get_trade_endpoint_returns_saved_trade() -> None:
     assert payload["state"] == "CREATED"
 
 
-def test_health_endpoint_returns_ok() -> None:
+def test_health_endpoint_returns_ok(client: TestClient) -> None:
     response = client.get("/health")
     assert response.status_code == 200
     payload = response.json()
@@ -81,7 +85,7 @@ def test_health_endpoint_returns_ok() -> None:
     assert payload["db_path"]
 
 
-def test_fiat_paid_and_release_flow() -> None:
+def test_fiat_paid_and_release_flow(client: TestClient) -> None:
     create_response = client.post(
         "/trades",
         json={
@@ -111,7 +115,7 @@ def test_fiat_paid_and_release_flow() -> None:
     assert payload["release_txid"]
 
 
-def test_dispute_and_moderator_resolve_refund() -> None:
+def test_dispute_and_moderator_resolve_refund(client: TestClient) -> None:
     create_response = client.post(
         "/trades",
         json={
@@ -147,3 +151,26 @@ def test_dispute_and_moderator_resolve_refund() -> None:
     assert payload["state"] == "REFUNDED"
     assert payload["seller_refund_address"] == "48xmrSellerRefund"
     assert payload["refund_txid"]
+
+
+def test_create_trade_enforces_open_trade_limit_per_seller(client: TestClient) -> None:
+    for _ in range(3):
+        r = client.post(
+            "/trades",
+            json={
+                "amount_xmr": 0.1,
+                "seller_id": "seller-limit-1",
+                "required_confirmations": 10,
+            },
+        )
+        assert r.status_code == 200
+
+    blocked = client.post(
+        "/trades",
+        json={
+            "amount_xmr": 0.1,
+            "seller_id": "seller-limit-1",
+            "required_confirmations": 10,
+        },
+    )
+    assert blocked.status_code == 400

@@ -4,7 +4,7 @@ Monero-focused fork project inspired by RoboSats.
 
 ## Status
 
-Phase 0 (kickoff and specification).
+Phase 2 (settlement + disputes) in progress.
 
 ## Objective
 
@@ -71,6 +71,12 @@ Wallet mode:
 - Run watcher loop: `python -m backend.watcher_main`
 - Configure interval with `ROBOSATS_XMR_WATCHER_INTERVAL_SECONDS` (default `10`)
 - Uses the same wallet mode environment variables as the API.
+
+## Hardening (started early)
+
+- Rate limiting middleware (basic in-memory)
+- Seller open-trade limit (default max 3 open trades)
+- Stale trade sweeper (module only; wiring into runner comes next)
 
 ## Working Agreement
 
