@@ -51,10 +51,10 @@ No milestone is complete until tests for that milestone pass locally and evidenc
 
 ## Phase 1.5 Funding Checklist
 
-- [ ] `POST /trades` creates trade in `CREATED`.
-- [ ] `POST /trades/{trade_id}/assign-deposit` sets `FUNDS_PENDING` and deposit address.
-- [ ] Confirmation source is updated (via `seed-confirmations` in fake-wallet tests, or wallet RPC on watcher runs).
-- [ ] Watcher poll (`run_funding_refresh_once` / loop) auto-transitions trade to `FUNDED` at `>= required_confirmations` (default 10).
-- [ ] Once `FUNDED`, subsequent watcher polls skip the trade.
-- [ ] `POST /trades/{trade_id}/refresh-funding` returns consistent `state` and `current_confirmations`.
-- [ ] `pytest -q` is green before Phase 1.5 is marked complete.
+- [x] `POST /trades` creates trade in `CREATED`.
+- [x] `POST /trades/{trade_id}/assign-deposit` sets `FUNDS_PENDING` and deposit address.
+- [x] Confirmation source is updated (via `seed-confirmations` in fake-wallet tests, or wallet RPC on watcher runs).
+- [x] Watcher poll (`run_funding_refresh_once` / loop) auto-transitions trade to `FUNDED` at `>= required_confirmations` (default 10).
+- [x] Once `FUNDED`, subsequent watcher polls skip the trade.
+- [x] `POST /trades/{trade_id}/refresh-funding` returns consistent `state` and `current_confirmations`.
+- [x] `pytest -q` is green before Phase 1.5 is marked complete.

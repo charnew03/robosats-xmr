@@ -55,6 +55,13 @@ Wallet mode:
   - `MONERO_WALLET_RPC_PASSWORD`
   - `MONERO_WALLET_ACCOUNT_INDEX` (optional, defaults to `0`)
 
+## Current Capabilities
+
+- Trades can be created and assigned a unique deposit address.
+- Funding confirmation checks are available via API (`refresh-funding`) and via the background watcher loop.
+- When confirmations reach the required threshold (10 by default), trades are automatically marked `FUNDED`.
+- Once funded, trades are skipped by subsequent watcher polls.
+
 ## Run API Locally
 
 - Install runtime deps: `python -m pip install -r requirements.txt`
@@ -73,6 +80,11 @@ Wallet mode:
 - Uses the same wallet mode environment variables as the API.
 - The watcher automatically marks `FUNDS_PENDING` trades as `FUNDED` once confirmations reach the trade threshold (10 by default).
 - Funded trades are skipped on later polls, so only pending deposits continue to be refreshed.
+
+## Status & Next Steps
+
+- Phase 1.5 funding slice is complete per the working agreement: funding tests and checklist items are green.
+- Next work remains in later milestones (settlement/disputes hardening and broader operational controls), without changing the completed Phase 1.5 scope.
 
 ## Hardening (started early)
 
