@@ -49,6 +49,17 @@ No milestone is complete until tests for that milestone pass locally and evidenc
 - Backup and restore tested from fresh environment.
 - Open critical bug count is zero.
 
+## Phase 1 Core Checklist
+
+- [x] `POST /trades` creates a trade with initial state `CREATED`.
+- [x] `POST /trades/{trade_id}/assign-deposit` stores a unique deposit address and transitions to `FUNDS_PENDING`.
+- [x] Funding confirmation works via manual refresh (`POST /trades/{trade_id}/refresh-funding`) and watcher polling.
+- [x] Trade transitions to `FUNDED` automatically at `>= required_confirmations` (default 10).
+- [x] `GET /trades/{trade_id}` returns current state and confirmation fields consistently.
+- [x] `GET /trades` returns persisted trades for basic read/list flow.
+- [x] SQLite persistence is validated through API and repository tests.
+- [x] Fake wallet mode and real wallet RPC mode are both supported by configuration.
+
 ## Phase 1.5 Funding Checklist
 
 - [x] `POST /trades` creates trade in `CREATED`.

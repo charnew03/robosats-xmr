@@ -4,7 +4,8 @@ Monero-focused fork project inspired by RoboSats.
 
 ## Status
 
-Phase 2 (settlement + disputes) in progress.
+- ✅ Phase 1 (Core trade creation, deposit assignment, funding & status handling) — COMPLETE
+- Phase 2 (settlement + disputes) remains outside this completed Phase 1 scope.
 
 ## Objective
 
@@ -61,6 +62,14 @@ Wallet mode:
 - Funding confirmation checks are available via API (`refresh-funding`) and via the background watcher loop.
 - When confirmations reach the required threshold (10 by default), trades are automatically marked `FUNDED`.
 - Once funded, trades are skipped by subsequent watcher polls.
+- Trades can be read individually (`GET /trades/{trade_id}`) or listed (`GET /trades`) with consistent status and confirmation fields.
+
+Phase 1 now supports:
+
+- Core trade creation and persistence in SQLite.
+- Deposit address assignment and pending-funding tracking.
+- Manual and watcher-based funding detection with automatic `FUNDED` transition.
+- Basic trade read/list endpoints for lifecycle visibility.
 
 ## Run API Locally
 
@@ -83,8 +92,8 @@ Wallet mode:
 
 ## Status & Next Steps
 
-- Phase 1.5 funding slice is complete per the working agreement: funding tests and checklist items are green.
-- Next work remains in later milestones (settlement/disputes hardening and broader operational controls), without changing the completed Phase 1.5 scope.
+- Phase 1 and Phase 1.5 are complete per the working agreement: required tests and checklists in `docs/TESTING.md` are green.
+- Next work remains in later milestones, without changing the completed Phase 1 scope.
 
 ## Hardening (started early)
 

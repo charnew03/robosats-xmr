@@ -276,6 +276,11 @@ def create_app(
             raise HTTPException(status_code=404, detail="trade not found")
         return to_trade_response(trade)
 
+    @app.get("/trades", response_model=list[TradeResponse])
+    def list_trades() -> list[TradeResponse]:
+        trades = trade_repository.list_all()
+        return [to_trade_response(trade) for trade in trades]
+
 
     @app.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:

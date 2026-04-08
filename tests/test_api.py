@@ -83,6 +83,33 @@ def test_get_trade_endpoint_returns_saved_trade(client: TestClient) -> None:
     assert payload["state"] == "CREATED"
 
 
+def test_get_trade_missing_trade_returns_404(client: TestClient) -> None:
+    response = client.get("/trades/not-real")
+    assert response.status_code == 404
+
+
+def test_list_trades_endpoint_returns_created_trades(client: TestClient) -> None:
+    first = client.post(
+        "/trades",
+        json={"amount_xmr": 0.31, "seller_id": "seller-list-1", "required_confirmations": 10},
+    )
+    second = client.post(
+        "/trades",
+        json={"amount_xmr": 0.32, "seller_id": "seller-list-2", "required_confirmations": 10},
+    )
+    assert first.status_code == 200
+    assert second.status_code == 200
+
+    response = client.get("/trades")
+    assert response.status_code == 200
+    payload = response.json()
+    assert isinstance(payload, list)
+
+    returned_ids = {trade["trade_id"] for trade in payload}
+    assert first.json()["trade_id"] in returned_ids
+    assert second.json()["trade_id"] in returned_ids
+
+
 def test_health_endpoint_returns_ok(client: TestClient) -> None:
     response = client.get("/health")
     assert response.status_code == 200
