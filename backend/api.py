@@ -195,6 +195,27 @@ def create_app(
 
     @app.post("/trades/{trade_id}/mark-fiat-paid", response_model=TradeResponse)
     def mark_fiat_paid(trade_id: str) -> TradeResponse:
+        return _mark_fiat_paid(trade_id)
+
+    # Phase 2 alias path kept explicit for settlement naming.
+    @app.post("/trades/{trade_id}/release-escrow", response_model=TradeResponse)
+    def release_escrow(trade_id: str, payload: ReleaseRequest) -> TradeResponse:
+        return _release_escrow(trade_id, payload)
+
+    @app.post("/trades/{trade_id}/release", response_model=TradeResponse)
+    def release(trade_id: str, payload: ReleaseRequest) -> TradeResponse:
+        return _release_escrow(trade_id, payload)
+
+    # Phase 2 alias path kept explicit for dispute naming.
+    @app.post("/trades/{trade_id}/open-dispute", response_model=TradeResponse)
+    def open_dispute(trade_id: str, payload: DisputeRequest) -> TradeResponse:
+        return _open_dispute(trade_id, payload)
+
+    @app.post("/trades/{trade_id}/dispute", response_model=TradeResponse)
+    def dispute(trade_id: str, payload: DisputeRequest) -> TradeResponse:
+        return _open_dispute(trade_id, payload)
+
+    def _mark_fiat_paid(trade_id: str) -> TradeResponse:
         trade = trade_repository.get(trade_id)
         if trade is None:
             raise HTTPException(status_code=404, detail="trade not found")
@@ -205,11 +226,13 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         trade_repository.save(trade)
+        if hasattr(trade_repository, "add_audit_event"):
+            trade_repository.add_audit_event(
+                trade_id, trade.buyer_id or "buyer", "fiat_marked_paid", None
+            )
         return to_trade_response(trade)
 
-
-    @app.post("/trades/{trade_id}/release", response_model=TradeResponse)
-    def release(trade_id: str, payload: ReleaseRequest) -> TradeResponse:
+    def _release_escrow(trade_id: str, payload: ReleaseRequest) -> TradeResponse:
         trade = trade_repository.get(trade_id)
         if trade is None:
             raise HTTPException(status_code=404, detail="trade not found")
@@ -222,11 +245,12 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         trade_repository.save(trade)
         if hasattr(trade_repository, "add_audit_event"):
-            trade_repository.add_audit_event(trade_id, trade.seller_id, "release", txid)
+            trade_repository.add_audit_event(
+                trade_id, trade.seller_id, "release_escrow", txid
+            )
         return to_trade_response(trade)
 
-    @app.post("/trades/{trade_id}/dispute", response_model=TradeResponse)
-    def dispute(trade_id: str, payload: DisputeRequest) -> TradeResponse:
+    def _open_dispute(trade_id: str, payload: DisputeRequest) -> TradeResponse:
         trade = trade_repository.get(trade_id)
         if trade is None:
             raise HTTPException(status_code=404, detail="trade not found")

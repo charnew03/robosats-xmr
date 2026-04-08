@@ -69,3 +69,11 @@ No milestone is complete until tests for that milestone pass locally and evidenc
 - [x] Once `FUNDED`, subsequent watcher polls skip the trade.
 - [x] `POST /trades/{trade_id}/refresh-funding` returns consistent `state` and `current_confirmations`.
 - [x] `pytest -q` is green before Phase 1.5 is marked complete.
+
+## Phase 2 Settlement + Disputes Checklist (In Progress)
+
+- [ ] `POST /trades/{trade_id}/mark-fiat-paid` moves trade from `FUNDED` to `FIAT_MARKED_PAID`.
+- [ ] `POST /trades/{trade_id}/release-escrow` moves trade from `FIAT_MARKED_PAID` to `RELEASED`.
+- [ ] `POST /trades/{trade_id}/open-dispute` moves funded trade to `DISPUTED` and freezes settlement path.
+- [ ] Basic audit events are written for fiat-paid, release, and dispute-open actions.
+- [ ] Integration tests cover Phase 2 happy path and dispute-open path.

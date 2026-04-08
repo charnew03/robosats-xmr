@@ -92,8 +92,8 @@ Phase 1 now supports:
 
 ## Status & Next Steps
 
-- Phase 1 and Phase 1.5 are complete per the working agreement: required tests and checklists in `docs/TESTING.md` are green.
-- Next work remains in later milestones, without changing the completed Phase 1 scope.
+- ✅ Phase 1 — COMPLETE | Phase 2 (settlement + disputes) — IN PROGRESS
+- Phase 1 and Phase 1.5 remain complete per the working agreement: required tests and checklists in `docs/TESTING.md` are green.
 
 ## Hardening (started early)
 
