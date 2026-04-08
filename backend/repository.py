@@ -52,6 +52,12 @@ class SQLiteTradeRepository:
                     seller_id TEXT NOT NULL,
                     buyer_id TEXT,
                     deposit_address TEXT,
+                    buyer_payout_address TEXT,
+                    seller_refund_address TEXT,
+                    release_txid TEXT,
+                    refund_txid TEXT,
+                    dispute_reason TEXT,
+                    dispute_opened_at TEXT,
                     required_confirmations INTEGER NOT NULL,
                     current_confirmations INTEGER NOT NULL,
                     funded_at TEXT,
@@ -60,6 +66,33 @@ class SQLiteTradeRepository:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS audit_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    trade_id TEXT NOT NULL,
+                    actor_id TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    note TEXT,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+
+            existing_cols = {
+                row[1] for row in conn.execute("PRAGMA table_info(trades)").fetchall()
+            }
+            wanted_cols = {
+                "buyer_payout_address": "TEXT",
+                "seller_refund_address": "TEXT",
+                "release_txid": "TEXT",
+                "refund_txid": "TEXT",
+                "dispute_reason": "TEXT",
+                "dispute_opened_at": "TEXT",
+            }
+            for col, col_type in wanted_cols.items():
+                if col not in existing_cols:
+                    conn.execute(f"ALTER TABLE trades ADD COLUMN {col} {col_type}")
 
     def save(self, trade: Trade) -> Trade:
         with self._connect() as conn:
@@ -67,15 +100,23 @@ class SQLiteTradeRepository:
                 """
                 INSERT INTO trades (
                     trade_id, state, amount_xmr, seller_id, buyer_id,
-                    deposit_address, required_confirmations, current_confirmations,
+                    deposit_address, buyer_payout_address, seller_refund_address,
+                    release_txid, refund_txid, dispute_reason, dispute_opened_at,
+                    required_confirmations, current_confirmations,
                     funded_at, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(trade_id) DO UPDATE SET
                     state=excluded.state,
                     amount_xmr=excluded.amount_xmr,
                     seller_id=excluded.seller_id,
                     buyer_id=excluded.buyer_id,
                     deposit_address=excluded.deposit_address,
+                    buyer_payout_address=excluded.buyer_payout_address,
+                    seller_refund_address=excluded.seller_refund_address,
+                    release_txid=excluded.release_txid,
+                    refund_txid=excluded.refund_txid,
+                    dispute_reason=excluded.dispute_reason,
+                    dispute_opened_at=excluded.dispute_opened_at,
                     required_confirmations=excluded.required_confirmations,
                     current_confirmations=excluded.current_confirmations,
                     funded_at=excluded.funded_at,
@@ -89,6 +130,12 @@ class SQLiteTradeRepository:
                     trade.seller_id,
                     trade.buyer_id,
                     trade.deposit_address,
+                    trade.buyer_payout_address,
+                    trade.seller_refund_address,
+                    trade.release_txid,
+                    trade.refund_txid,
+                    trade.dispute_reason,
+                    trade.dispute_opened_at.isoformat() if trade.dispute_opened_at else None,
                     trade.required_confirmations,
                     trade.current_confirmations,
                     trade.funded_at.isoformat() if trade.funded_at else None,
@@ -104,7 +151,9 @@ class SQLiteTradeRepository:
                 """
                 SELECT
                     trade_id, state, amount_xmr, seller_id, buyer_id,
-                    deposit_address, required_confirmations, current_confirmations,
+                    deposit_address, buyer_payout_address, seller_refund_address,
+                    release_txid, refund_txid, dispute_reason, dispute_opened_at,
+                    required_confirmations, current_confirmations,
                     funded_at, created_at, updated_at
                 FROM trades
                 WHERE trade_id = ?
@@ -122,11 +171,17 @@ class SQLiteTradeRepository:
             seller_id=row[3],
             buyer_id=row[4],
             deposit_address=row[5],
-            required_confirmations=row[6],
-            current_confirmations=row[7],
-            funded_at=datetime.fromisoformat(row[8]) if row[8] else None,
-            created_at=datetime.fromisoformat(row[9]),
-            updated_at=datetime.fromisoformat(row[10]),
+            buyer_payout_address=row[6],
+            seller_refund_address=row[7],
+            release_txid=row[8],
+            refund_txid=row[9],
+            dispute_reason=row[10],
+            dispute_opened_at=datetime.fromisoformat(row[11]) if row[11] else None,
+            required_confirmations=row[12],
+            current_confirmations=row[13],
+            funded_at=datetime.fromisoformat(row[14]) if row[14] else None,
+            created_at=datetime.fromisoformat(row[15]),
+            updated_at=datetime.fromisoformat(row[16]),
         )
 
     def list_all(self) -> list[Trade]:
@@ -135,7 +190,9 @@ class SQLiteTradeRepository:
                 """
                 SELECT
                     trade_id, state, amount_xmr, seller_id, buyer_id,
-                    deposit_address, required_confirmations, current_confirmations,
+                    deposit_address, buyer_payout_address, seller_refund_address,
+                    release_txid, refund_txid, dispute_reason, dispute_opened_at,
+                    required_confirmations, current_confirmations,
                     funded_at, created_at, updated_at
                 FROM trades
                 """
@@ -149,11 +206,29 @@ class SQLiteTradeRepository:
                 seller_id=row[3],
                 buyer_id=row[4],
                 deposit_address=row[5],
-                required_confirmations=row[6],
-                current_confirmations=row[7],
-                funded_at=datetime.fromisoformat(row[8]) if row[8] else None,
-                created_at=datetime.fromisoformat(row[9]),
-                updated_at=datetime.fromisoformat(row[10]),
+                buyer_payout_address=row[6],
+                seller_refund_address=row[7],
+                release_txid=row[8],
+                refund_txid=row[9],
+                dispute_reason=row[10],
+                dispute_opened_at=datetime.fromisoformat(row[11]) if row[11] else None,
+                required_confirmations=row[12],
+                current_confirmations=row[13],
+                funded_at=datetime.fromisoformat(row[14]) if row[14] else None,
+                created_at=datetime.fromisoformat(row[15]),
+                updated_at=datetime.fromisoformat(row[16]),
             )
             for row in rows
         ]
+
+    def add_audit_event(self, trade_id: str, actor_id: str, action: str, note: str | None) -> None:
+        if not trade_id or not actor_id or not action:
+            raise ValueError("trade_id, actor_id, and action are required")
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO audit_events (trade_id, actor_id, action, note, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (trade_id, actor_id, action, note, datetime.utcnow().isoformat()),
+            )

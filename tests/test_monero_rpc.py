@@ -53,3 +53,25 @@ def test_rpc_error_raises_runtime_error(mock_post: Mock) -> None:
         assert False, "expected RuntimeError"
     except RuntimeError:
         assert True
+
+
+@patch("backend.monero_rpc.httpx.post")
+def test_send_xmr_uses_transfer(mock_post: Mock) -> None:
+    mock_post.return_value = _mock_response({"result": {"tx_hash": "abc123"}})
+    rpc = MoneroWalletRPC("http://localhost:18083", "user", "pass")
+
+    txid = rpc.send_xmr("48xmrDest", 0.5)
+
+    assert txid == "abc123"
+
+
+@patch("backend.monero_rpc.httpx.post")
+def test_send_xmr_empty_tx_hash_list_raises_runtime_error(mock_post: Mock) -> None:
+    mock_post.return_value = _mock_response({"result": {"tx_hash_list": []}})
+    rpc = MoneroWalletRPC("http://localhost:18083", "user", "pass")
+
+    try:
+        rpc.send_xmr("48xmrDest", 0.5)
+        assert False, "expected RuntimeError"
+    except RuntimeError:
+        assert True

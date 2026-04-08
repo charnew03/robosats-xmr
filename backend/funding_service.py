@@ -10,6 +10,8 @@ class WalletFundingRPC(Protocol):
 
     def get_confirmations(self, address: str) -> int: ...
 
+    def send_xmr(self, address: str, amount_xmr: float) -> str: ...
+
 
 def assign_trade_deposit(trade: Trade, wallet_rpc: WalletFundingRPC) -> str:
     address = wallet_rpc.generate_subaddress(trade.trade_id)

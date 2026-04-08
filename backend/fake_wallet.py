@@ -12,3 +12,8 @@ class FakeWalletFundingRPC:
 
     def get_confirmations(self, address: str) -> int:
         return self.confirmations_by_address.get(address, 0)
+
+    def send_xmr(self, address: str, amount_xmr: float) -> str:
+        if not address or amount_xmr <= 0:
+            raise ValueError("invalid send parameters")
+        return f"fake-txid-{address[:6]}-{amount_xmr}"

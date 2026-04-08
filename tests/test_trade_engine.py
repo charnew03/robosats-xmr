@@ -51,3 +51,25 @@ def test_record_confirmations_marks_funded_at_threshold() -> None:
     assert funded is True
     assert trade.state == TradeState.FUNDED
     assert trade.funded_at is not None
+
+
+def test_mark_fiat_paid_helper() -> None:
+    trade = Trade(trade_id="t-5", amount_xmr=0.2, seller_id="seller-5")
+    trade.assign_deposit_address("48xmrAddressTrade5")
+    trade.record_confirmations(10)
+
+    trade.mark_fiat_paid()
+
+    assert trade.state == TradeState.FIAT_MARKED_PAID
+
+
+def test_open_dispute_sets_reason_and_state() -> None:
+    trade = Trade(trade_id="t-6", amount_xmr=0.2, seller_id="seller-6")
+    trade.assign_deposit_address("48xmrAddressTrade6")
+    trade.record_confirmations(10)
+
+    trade.open_dispute("did not receive fiat")
+
+    assert trade.state == TradeState.DISPUTED
+    assert trade.dispute_reason == "did not receive fiat"
+    assert trade.dispute_opened_at is not None

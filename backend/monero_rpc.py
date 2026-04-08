@@ -66,3 +66,26 @@ class MoneroWalletRPC:
             ),
             default=0,
         )
+
+    def send_xmr(self, address: str, amount_xmr: float) -> str:
+        if not address:
+            raise ValueError("address cannot be empty")
+        if amount_xmr <= 0:
+            raise ValueError("amount_xmr must be > 0")
+
+        atomic_amount = int(amount_xmr * 1e12)
+        result = self._call(
+            "transfer",
+            {
+                "account_index": self.account_index,
+                "destinations": [{"address": address, "amount": atomic_amount}],
+            },
+        )
+        tx_hash = result.get("tx_hash")
+        if not tx_hash:
+            tx_hash_list = result.get("tx_hash_list")
+            if isinstance(tx_hash_list, list) and tx_hash_list:
+                tx_hash = tx_hash_list[0]
+        if not tx_hash:
+            raise RuntimeError("wallet rpc did not return tx hash")
+        return str(tx_hash)

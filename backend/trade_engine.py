@@ -47,6 +47,12 @@ class Trade:
     seller_id: str
     buyer_id: str | None = None
     deposit_address: str | None = None
+    buyer_payout_address: str | None = None
+    seller_refund_address: str | None = None
+    release_txid: str | None = None
+    refund_txid: str | None = None
+    dispute_reason: str | None = None
+    dispute_opened_at: datetime | None = None
     required_confirmations: int = 10
     current_confirmations: int = 0
     funded_at: datetime | None = None
@@ -79,6 +85,16 @@ class Trade:
         self.deposit_address = address
         self.transition(TradeState.FUNDS_PENDING, reason="deposit address assigned")
 
+    def mark_fiat_paid(self) -> TradeEvent:
+        return self.transition(TradeState.FIAT_MARKED_PAID, reason="fiat marked paid")
+
+    def open_dispute(self, reason: str) -> TradeEvent:
+        if not reason:
+            raise ValueError("dispute reason cannot be empty")
+        self.dispute_reason = reason
+        self.dispute_opened_at = datetime.now(UTC)
+        return self.transition(TradeState.DISPUTED, reason="dispute opened")
+
     def record_confirmations(self, confirmations: int) -> bool:
         if confirmations < 0:
             raise ValueError("confirmations cannot be negative")
@@ -91,6 +107,24 @@ class Trade:
             self.transition(TradeState.FUNDED, reason="required confirmations reached")
             return True
         return False
+
+    def set_release(self, payout_address: str, txid: str) -> None:
+        if not payout_address:
+            raise ValueError("payout address cannot be empty")
+        if not txid:
+            raise ValueError("txid cannot be empty")
+        self.buyer_payout_address = payout_address
+        self.release_txid = txid
+        self.transition(TradeState.RELEASED, reason="released")
+
+    def set_refund(self, refund_address: str, txid: str) -> None:
+        if not refund_address:
+            raise ValueError("refund address cannot be empty")
+        if not txid:
+            raise ValueError("txid cannot be empty")
+        self.seller_refund_address = refund_address
+        self.refund_txid = txid
+        self.transition(TradeState.REFUNDED, reason="refunded")
 
 
 def should_mark_funded(confirmations: int, required_confirmations: int = 10) -> bool:
