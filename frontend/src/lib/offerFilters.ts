@@ -22,6 +22,7 @@ export function filterOffers(
     amountMin: string;
     amountMax: string;
     premiumMax: string;
+    premiumMin: string;
   },
 ): Offer[] {
   return offers.filter((offer) => {
@@ -37,6 +38,7 @@ export function filterOffers(
     const minAmount = opts.amountMin ? Number(opts.amountMin) : null;
     const maxAmount = opts.amountMax ? Number(opts.amountMax) : null;
     const maxPremium = opts.premiumMax ? Number(opts.premiumMax) : null;
+    const minPremium = opts.premiumMin ? Number(opts.premiumMin) : null;
 
     if (minAmount !== null && !Number.isNaN(minAmount) && offer.amount_xmr < minAmount) {
       return false;
@@ -48,6 +50,13 @@ export function filterOffers(
       maxPremium !== null &&
       !Number.isNaN(maxPremium) &&
       offer.premium_pct > maxPremium
+    ) {
+      return false;
+    }
+    if (
+      minPremium !== null &&
+      !Number.isNaN(minPremium) &&
+      offer.premium_pct < minPremium
     ) {
       return false;
     }

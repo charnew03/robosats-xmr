@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useState } from "react";
 import type { Offer } from "../api";
 import { takeOffer } from "../api";
+import { useProfile } from "../context/ProfileContext";
 import { formatFiatCurrency, formatPremium, formatXmr, shortId } from "../lib/format";
 
 type Props = {
@@ -11,9 +12,14 @@ type Props = {
 };
 
 export function TakeOfferModal({ offer, onClose, onSuccess, onError }: Props) {
+  const { pseudonym } = useProfile();
   const [takerId, setTakerId] = useState("");
   const [confirmations, setConfirmations] = useState("10");
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (offer && pseudonym.trim()) setTakerId(pseudonym.trim());
+  }, [offer?.offer_id, pseudonym]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
