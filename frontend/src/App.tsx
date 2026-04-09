@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getOffers, type Offer } from "./api";
+import { OfferRowCard } from "./components/OfferRowCard";
 import { TakeOfferModal } from "./components/TakeOfferModal";
 import { Toast, type ToastState } from "./components/Toast";
 import { formatFiatCurrency, formatPremium, formatXmr, shortId } from "./lib/format";
@@ -105,6 +106,11 @@ function App() {
               <strong className="text-xmr-text">Sell XMR</strong> (you sell) has no listings until the API adds
               buy-side offers.
             </p>
+            <p className="mt-3 max-w-xl rounded-md border border-xmr-border bg-xmr-panel px-3 py-2 text-sm text-xmr-accentSoft">
+              To take an offer: use <strong className="text-xmr-text">Take this offer</strong> on mobile cards, or{" "}
+              <strong className="text-xmr-text">Take offer</strong> in the table (scroll right on narrow screens).
+              You need a <strong className="text-xmr-text">taker id</strong> (pseudonym) in the popup.
+            </p>
           </div>
           <button
             onClick={handleRefresh}
@@ -176,6 +182,19 @@ function App() {
           </label>
         </section>
 
+        {offers.length > 0 && filteredOffers.length === 0 && sideFilter !== "all" && (
+          <div className="mb-4 rounded-lg border border-amber-900/60 bg-amber-950/25 px-4 py-3 text-sm text-amber-100">
+            {sideFilter === "sell" ? (
+              <>
+                <strong>No rows match “Sell XMR.”</strong> Current listings are makers <strong>selling</strong> XMR
+                (you <strong>buy</strong>). Set Side to <strong>All</strong> or <strong>Buy XMR</strong> to see them.
+              </>
+            ) : (
+              <>No rows match your filters — try clearing min amount or payment method.</>
+            )}
+          </div>
+        )}
+
         <p className="mb-4 text-sm text-xmr-muted">
           Showing <strong className="text-xmr-text">{filteredOffers.length}</strong> of {offers.length} loaded offers
           {loading && " · loading…"}
@@ -195,8 +214,29 @@ function App() {
 
         {(!loading || offers.length > 0) && !error && (
           <section className="overflow-hidden rounded-lg border border-xmr-border bg-xmr-panel">
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left text-sm">
+            {/* Mobile: cards with obvious full-width button */}
+            <div className="space-y-3 p-3 md:hidden">
+              {filteredOffers.length === 0 ? (
+                <p className="py-6 text-center text-sm text-xmr-muted">
+                  {sideFilter === "sell" ? (
+                    <>
+                      No listings here. Use <strong className="text-xmr-text">All</strong> or{" "}
+                      <strong className="text-xmr-text">Buy XMR</strong> to take a sell offer.
+                    </>
+                  ) : (
+                    <>No offers match the current filters.</>
+                  )}
+                </p>
+              ) : (
+                filteredOffers.map((offer) => (
+                  <OfferRowCard key={offer.offer_id} offer={offer} onTake={setTakeOfferTarget} />
+                ))
+              )}
+            </div>
+
+            {/* Tablet/desktop: table; sticky Action column when scrolling horizontally */}
+            <div className="hidden overflow-x-auto md:block">
+              <table className="min-w-[720px] w-full text-left text-sm">
                 <thead className="bg-black/20 text-xmr-muted">
                   <tr>
                     <th className="px-4 py-3 font-medium">Side</th>
@@ -205,8 +245,10 @@ function App() {
                     <th className="px-4 py-3 font-medium">Premium</th>
                     <th className="px-4 py-3 font-medium">Fiat</th>
                     <th className="px-4 py-3 font-medium">Payment</th>
-                    <th className="hidden md:table-cell px-4 py-3 font-medium">Bonds (M/T)</th>
-                    <th className="px-4 py-3 font-medium text-right">Action</th>
+                    <th className="px-4 py-3 font-medium">Bonds (M/T)</th>
+                    <th className="sticky right-0 z-10 border-l border-xmr-border bg-xmr-panel px-4 py-3 text-right font-medium shadow-[-8px_0_12px_-8px_rgba(0,0,0,0.5)]">
+                      Action
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -239,10 +281,10 @@ function App() {
                         <td className="px-4 py-3">{formatPremium(offer.premium_pct)}</td>
                         <td className="px-4 py-3 font-medium">{formatFiatCurrency(offer.fiat_currency)}</td>
                         <td className="px-4 py-3">{offer.payment_method}</td>
-                        <td className="hidden md:table-cell px-4 py-3 font-mono text-xs text-xmr-muted">
+                        <td className="px-4 py-3 font-mono text-xs text-xmr-muted">
                           {formatXmr(offer.maker_bond_amount)} / {formatXmr(offer.taker_bond_amount)}
                         </td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="sticky right-0 z-10 border-l border-xmr-border bg-xmr-panel px-4 py-3 text-right shadow-[-8px_0_12px_-8px_rgba(0,0,0,0.5)]">
                           <button
                             type="button"
                             onClick={() => setTakeOfferTarget(offer)}
