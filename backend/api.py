@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -178,6 +179,18 @@ def create_app(
     use_fake_wallet: bool | None = None,
 ) -> FastAPI:
     app = FastAPI(title="robosats-xmr API")
+    cors_origins_raw = os.getenv(
+        "ROBOSATS_XMR_CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    )
+    cors_origins = [origin.strip() for origin in cors_origins_raw.split(",") if origin.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     effective_db_path = db_path or os.getenv("ROBOSATS_XMR_DB_PATH", "data/trades.db")
     Path(effective_db_path).parent.mkdir(parents=True, exist_ok=True)
