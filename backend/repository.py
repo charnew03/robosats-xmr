@@ -49,10 +49,48 @@ class TradeRepository(Protocol):
 
     def list_all(self) -> list[Trade]: ...
 
+    def save_offer(self, offer: "Offer") -> "Offer": ...
+
+    def get_offer(self, offer_id: str) -> "Offer | None": ...
+
+    def list_active_offers(self) -> list["Offer"]: ...
+
+
+@dataclass
+class Offer:
+    offer_id: str
+    maker_id: str
+    amount_xmr: float
+    premium_pct: float
+    fiat_currency: str
+    payment_method: str
+    is_active: bool = True
+    taken_by: str | None = None
+    trade_id: str | None = None
+    created_at: datetime = field(default_factory=datetime.utcnow)
+    updated_at: datetime = field(default_factory=datetime.utcnow)
+
+
+def _offer_from_row(row: tuple) -> Offer:
+    return Offer(
+        offer_id=row[0],
+        maker_id=row[1],
+        amount_xmr=row[2],
+        premium_pct=row[3],
+        fiat_currency=row[4],
+        payment_method=row[5],
+        is_active=bool(row[6]),
+        taken_by=row[7],
+        trade_id=row[8],
+        created_at=datetime.fromisoformat(row[9]),
+        updated_at=datetime.fromisoformat(row[10]),
+    )
+
 
 @dataclass
 class InMemoryTradeRepository:
     _trades: dict[str, Trade] = field(default_factory=dict)
+    _offers: dict[str, Offer] = field(default_factory=dict)
 
     def save(self, trade: Trade) -> Trade:
         self._trades[trade.trade_id] = trade
@@ -63,6 +101,17 @@ class InMemoryTradeRepository:
 
     def list_all(self) -> list[Trade]:
         return list(self._trades.values())
+
+    def save_offer(self, offer: Offer) -> Offer:
+        offer.updated_at = datetime.utcnow()
+        self._offers[offer.offer_id] = offer
+        return offer
+
+    def get_offer(self, offer_id: str) -> Offer | None:
+        return self._offers.get(offer_id)
+
+    def list_active_offers(self) -> list[Offer]:
+        return [o for o in self._offers.values() if o.is_active]
 
 
 @dataclass
@@ -119,6 +168,23 @@ class SQLiteTradeRepository:
                     action TEXT NOT NULL,
                     note TEXT,
                     created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS offers (
+                    offer_id TEXT PRIMARY KEY,
+                    maker_id TEXT NOT NULL,
+                    amount_xmr REAL NOT NULL,
+                    premium_pct REAL NOT NULL,
+                    fiat_currency TEXT NOT NULL,
+                    payment_method TEXT NOT NULL,
+                    is_active INTEGER NOT NULL,
+                    taken_by TEXT,
+                    trade_id TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
                 )
                 """
             )
@@ -276,3 +342,70 @@ class SQLiteTradeRepository:
                 """,
                 (trade_id, actor_id, action, note, datetime.utcnow().isoformat()),
             )
+
+    def save_offer(self, offer: Offer) -> Offer:
+        offer.updated_at = datetime.utcnow()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO offers (
+                    offer_id, maker_id, amount_xmr, premium_pct, fiat_currency, payment_method,
+                    is_active, taken_by, trade_id, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(offer_id) DO UPDATE SET
+                    maker_id=excluded.maker_id,
+                    amount_xmr=excluded.amount_xmr,
+                    premium_pct=excluded.premium_pct,
+                    fiat_currency=excluded.fiat_currency,
+                    payment_method=excluded.payment_method,
+                    is_active=excluded.is_active,
+                    taken_by=excluded.taken_by,
+                    trade_id=excluded.trade_id,
+                    created_at=excluded.created_at,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    offer.offer_id,
+                    offer.maker_id,
+                    offer.amount_xmr,
+                    offer.premium_pct,
+                    offer.fiat_currency,
+                    offer.payment_method,
+                    1 if offer.is_active else 0,
+                    offer.taken_by,
+                    offer.trade_id,
+                    offer.created_at.isoformat(),
+                    offer.updated_at.isoformat(),
+                ),
+            )
+        return offer
+
+    def get_offer(self, offer_id: str) -> Offer | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    offer_id, maker_id, amount_xmr, premium_pct, fiat_currency, payment_method,
+                    is_active, taken_by, trade_id, created_at, updated_at
+                FROM offers
+                WHERE offer_id = ?
+                """,
+                (offer_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return _offer_from_row(row)
+
+    def list_active_offers(self) -> list[Offer]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    offer_id, maker_id, amount_xmr, premium_pct, fiat_currency, payment_method,
+                    is_active, taken_by, trade_id, created_at, updated_at
+                FROM offers
+                WHERE is_active = 1
+                ORDER BY created_at DESC
+                """
+            ).fetchall()
+        return [_offer_from_row(row) for row in rows]

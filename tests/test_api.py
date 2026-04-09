@@ -365,3 +365,70 @@ def test_create_trade_enforces_open_trade_limit_per_seller(client: TestClient) -
         },
     )
     assert blocked.status_code == 400
+
+
+def test_offer_create_list_and_take_flow(client: TestClient) -> None:
+    created_offer = client.post(
+        "/offers",
+        json={
+            "maker_id": "maker-offer-1",
+            "amount_xmr": 0.75,
+            "premium_pct": 1.5,
+            "fiat_currency": "USD",
+            "payment_method": "SEPA",
+        },
+    )
+    assert created_offer.status_code == 200
+    offer = created_offer.json()
+    offer_id = offer["offer_id"]
+    assert offer["is_active"] is True
+    assert offer["fiat_currency"] == "USD"
+
+    offers_list = client.get("/offers")
+    assert offers_list.status_code == 200
+    offer_ids = {o["offer_id"] for o in offers_list.json()}
+    assert offer_id in offer_ids
+
+    take = client.post(
+        f"/offers/{offer_id}/take",
+        json={"taker_id": "taker-offer-1"},
+    )
+    assert take.status_code == 200
+    trade = take.json()
+    assert trade["seller_id"] == "maker-offer-1"
+    assert trade["buyer_id"] == "taker-offer-1"
+    assert trade["state"] == "FUNDS_PENDING"
+    assert trade["deposit_address"] is not None
+    assert trade["maker_bond_address"] is not None
+    assert trade["taker_bond_address"] is not None
+
+    offers_after_take = client.get("/offers")
+    assert offers_after_take.status_code == 200
+    offer_ids_after = {o["offer_id"] for o in offers_after_take.json()}
+    assert offer_id not in offer_ids_after
+
+
+def test_take_offer_rejects_inactive_offer(client: TestClient) -> None:
+    created_offer = client.post(
+        "/offers",
+        json={
+            "maker_id": "maker-offer-2",
+            "amount_xmr": 0.2,
+            "premium_pct": 0.5,
+            "fiat_currency": "EUR",
+            "payment_method": "REVOLUT",
+        },
+    )
+    offer_id = created_offer.json()["offer_id"]
+
+    first_take = client.post(
+        f"/offers/{offer_id}/take",
+        json={"taker_id": "taker-offer-2"},
+    )
+    assert first_take.status_code == 200
+
+    second_take = client.post(
+        f"/offers/{offer_id}/take",
+        json={"taker_id": "taker-offer-3"},
+    )
+    assert second_take.status_code == 400

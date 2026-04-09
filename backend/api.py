@@ -14,7 +14,7 @@ from backend.bond_service import assign_trade_bonds
 from backend.fake_wallet import FakeWalletFundingRPC
 from backend.funding_service import assign_trade_deposit, refresh_trade_funding
 from backend.monero_rpc import MoneroWalletRPC
-from backend.repository import SQLiteTradeRepository, TradeRepository
+from backend.repository import Offer, SQLiteTradeRepository, TradeRepository
 from backend.risk_limits import RiskLimits, enforce_seller_open_trade_limit
 from backend.rate_limit import RateLimiter
 from backend.trade_engine import Trade, TradeState
@@ -62,6 +62,21 @@ class CollaborativeCancelRequest(BaseModel):
     taker_return_address: str | None = None
 
 
+class CreateOfferRequest(BaseModel):
+    maker_id: str = Field(min_length=1)
+    amount_xmr: float = Field(gt=0)
+    premium_pct: float = Field(default=0.0)
+    fiat_currency: str = Field(min_length=2)
+    payment_method: str = Field(min_length=1)
+
+
+class TakeOfferRequest(BaseModel):
+    taker_id: str = Field(min_length=1)
+    required_confirmations: int = Field(default=10, ge=1)
+    maker_bond_amount_xmr: float = Field(default=0.01, gt=0)
+    taker_bond_amount_xmr: float = Field(default=0.01, gt=0)
+
+
 class TradeResponse(BaseModel):
     trade_id: str
     state: str
@@ -87,6 +102,20 @@ class TradeResponse(BaseModel):
     deposit_subaddress_index: int | None = None
     maker_bond_subaddress_index: int | None = None
     taker_bond_subaddress_index: int | None = None
+
+
+class OfferResponse(BaseModel):
+    offer_id: str
+    maker_id: str
+    amount_xmr: float
+    premium_pct: float
+    fiat_currency: str
+    payment_method: str
+    is_active: bool
+    taken_by: str | None
+    trade_id: str | None
+    created_at: datetime
+    updated_at: datetime
 
 
 class HealthResponse(BaseModel):
@@ -120,6 +149,22 @@ def to_trade_response(trade: Trade) -> TradeResponse:
         deposit_subaddress_index=trade.deposit_subaddress_index,
         maker_bond_subaddress_index=trade.maker_bond_subaddress_index,
         taker_bond_subaddress_index=trade.taker_bond_subaddress_index,
+    )
+
+
+def to_offer_response(offer: Offer) -> OfferResponse:
+    return OfferResponse(
+        offer_id=offer.offer_id,
+        maker_id=offer.maker_id,
+        amount_xmr=offer.amount_xmr,
+        premium_pct=offer.premium_pct,
+        fiat_currency=offer.fiat_currency,
+        payment_method=offer.payment_method,
+        is_active=offer.is_active,
+        taken_by=offer.taken_by,
+        trade_id=offer.trade_id,
+        created_at=offer.created_at,
+        updated_at=offer.updated_at,
     )
 
 
@@ -187,6 +232,73 @@ def create_app(
             taker_bond_amount=payload.taker_bond_amount_xmr,
         )
         trade_repository.save(trade)
+        return to_trade_response(trade)
+
+    @app.post("/offers", response_model=OfferResponse)
+    def create_offer(payload: CreateOfferRequest) -> OfferResponse:
+        offer = Offer(
+            offer_id=str(uuid4()),
+            maker_id=payload.maker_id,
+            amount_xmr=payload.amount_xmr,
+            premium_pct=payload.premium_pct,
+            fiat_currency=payload.fiat_currency.upper(),
+            payment_method=payload.payment_method,
+        )
+        trade_repository.save_offer(offer)
+        return to_offer_response(offer)
+
+    @app.get("/offers", response_model=list[OfferResponse])
+    def list_offers() -> list[OfferResponse]:
+        offers = trade_repository.list_active_offers()
+        return [to_offer_response(offer) for offer in offers]
+
+    @app.post("/offers/{offer_id}/take", response_model=TradeResponse)
+    def take_offer(offer_id: str, payload: TakeOfferRequest) -> TradeResponse:
+        offer = trade_repository.get_offer(offer_id)
+        if offer is None:
+            raise HTTPException(status_code=404, detail="offer not found")
+        if not offer.is_active:
+            raise HTTPException(status_code=400, detail="offer is not active")
+        try:
+            enforce_seller_open_trade_limit(
+                trade_repository, offer.maker_id, risk_limits
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        trade = Trade(
+            trade_id=str(uuid4()),
+            amount_xmr=offer.amount_xmr,
+            seller_id=offer.maker_id,
+            buyer_id=payload.taker_id,
+            required_confirmations=payload.required_confirmations,
+            maker_bond_amount=payload.maker_bond_amount_xmr,
+            taker_bond_amount=payload.taker_bond_amount_xmr,
+        )
+        assign_trade_deposit(trade, wallet_rpc)
+        assign_trade_bonds(trade, wallet_rpc)
+        trade.deposit_subaddress_index = resolve_subaddress_index(
+            wallet_rpc, trade.deposit_address
+        )
+        trade.maker_bond_subaddress_index = resolve_subaddress_index(
+            wallet_rpc, trade.maker_bond_address
+        )
+        trade.taker_bond_subaddress_index = resolve_subaddress_index(
+            wallet_rpc, trade.taker_bond_address
+        )
+
+        trade_repository.save(trade)
+        offer.is_active = False
+        offer.taken_by = payload.taker_id
+        offer.trade_id = trade.trade_id
+        trade_repository.save_offer(offer)
+        if hasattr(trade_repository, "add_audit_event"):
+            trade_repository.add_audit_event(
+                trade.trade_id,
+                payload.taker_id,
+                "offer_taken",
+                f"offer_id={offer.offer_id}",
+            )
         return to_trade_response(trade)
 
 

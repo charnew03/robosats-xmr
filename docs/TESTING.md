@@ -98,3 +98,12 @@ No milestone is complete until tests for that milestone pass locally and evidenc
 - [x] Dispute flow logs bond-slash placeholder (`bond_slash_placeholder`) for coordinator-retained-bonds policy draft.
 - [x] Audit event `bonds_assigned` on assign-deposit.
 - [x] `pytest -q` green including Phase 3 tests.
+
+## Phase 4 Order Book Checklist (In progress)
+
+- [ ] Makers can create public offers (`POST /offers`).
+- [ ] Active offers can be listed (`GET /offers`).
+- [ ] Taker can take an offer (`POST /offers/{offer_id}/take`) to create trade in `FUNDS_PENDING`.
+- [ ] Offer taking allocates escrow + maker/taker bond subaddresses.
+- [ ] Offer lifecycle guards prevent taking inactive offers.
+- [ ] Integration tests cover create offer -> take offer -> trade creation flow.
