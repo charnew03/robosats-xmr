@@ -7,6 +7,7 @@ A clean-slate FastAPI backend for a Monero-native RoboSats-style P2P fiat ↔ XM
 - ✅ Phase 1 (core trade creation, deposit assignment, funding/status handling) — COMPLETE
 - ✅ Phase 2 (settlement + disputes) — COMPLETE
 - ✅ Phase 3 (bonds + basic hardening) — COMPLETE
+- Phase 4 (Basic Order Book) — IN PROGRESS
 - Next milestones: minimal frontend order flow and stagenet demo using the basic order book + existing trade engine.
 
 No phase is marked complete unless tests and checklists in `docs/TESTING.md` are green.
@@ -20,7 +21,7 @@ No phase is marked complete unless tests and checklists in `docs/TESTING.md` are
 | Bonds | Maker/taker bond amounts stored at trade creation, distinct bond subaddresses allocated, confirmation counters exposed |
 | Bond returns | Optional maker/taker bond return sends on collaborative cancel and successful release |
 | Risk controls | Seller max-open-trade limit enforced at creation |
-| Basic order book | Makers post public offers; takers can take offers to instantiate pending-funded trades |
+| Basic order book | Basic order book — makers can post public offers (POST /offers); anyone can list active offers (GET /offers); takers can take offers (POST /offers/{id}/take) which creates a bonded trade |
 | Maintenance jobs | Funding watcher and stale-trade sweeper loops with audit logging |
 
 ### Key API Endpoints

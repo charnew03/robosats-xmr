@@ -64,6 +64,8 @@ class Offer:
     premium_pct: float
     fiat_currency: str
     payment_method: str
+    maker_bond_amount: float = 0.01
+    taker_bond_amount: float = 0.01
     is_active: bool = True
     taken_by: str | None = None
     trade_id: str | None = None
@@ -79,11 +81,13 @@ def _offer_from_row(row: tuple) -> Offer:
         premium_pct=row[3],
         fiat_currency=row[4],
         payment_method=row[5],
-        is_active=bool(row[6]),
-        taken_by=row[7],
-        trade_id=row[8],
-        created_at=datetime.fromisoformat(row[9]),
-        updated_at=datetime.fromisoformat(row[10]),
+        maker_bond_amount=float(row[6]) if row[6] is not None else 0.01,
+        taker_bond_amount=float(row[7]) if row[7] is not None else 0.01,
+        is_active=bool(row[8]),
+        taken_by=row[9],
+        trade_id=row[10],
+        created_at=datetime.fromisoformat(row[11]),
+        updated_at=datetime.fromisoformat(row[12]),
     )
 
 
@@ -180,6 +184,8 @@ class SQLiteTradeRepository:
                     premium_pct REAL NOT NULL,
                     fiat_currency TEXT NOT NULL,
                     payment_method TEXT NOT NULL,
+                    maker_bond_amount REAL NOT NULL DEFAULT 0.01,
+                    taker_bond_amount REAL NOT NULL DEFAULT 0.01,
                     is_active INTEGER NOT NULL,
                     taken_by TEXT,
                     trade_id TEXT,
@@ -212,6 +218,16 @@ class SQLiteTradeRepository:
             for col, col_type in wanted_cols.items():
                 if col not in existing_cols:
                     conn.execute(f"ALTER TABLE trades ADD COLUMN {col} {col_type}")
+            offer_cols = {
+                row[1] for row in conn.execute("PRAGMA table_info(offers)").fetchall()
+            }
+            wanted_offer_cols = {
+                "maker_bond_amount": "REAL",
+                "taker_bond_amount": "REAL",
+            }
+            for col, col_type in wanted_offer_cols.items():
+                if col not in offer_cols:
+                    conn.execute(f"ALTER TABLE offers ADD COLUMN {col} {col_type}")
 
     def save(self, trade: Trade) -> Trade:
         with self._connect() as conn:
@@ -350,14 +366,16 @@ class SQLiteTradeRepository:
                 """
                 INSERT INTO offers (
                     offer_id, maker_id, amount_xmr, premium_pct, fiat_currency, payment_method,
-                    is_active, taken_by, trade_id, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    maker_bond_amount, taker_bond_amount, is_active, taken_by, trade_id, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(offer_id) DO UPDATE SET
                     maker_id=excluded.maker_id,
                     amount_xmr=excluded.amount_xmr,
                     premium_pct=excluded.premium_pct,
                     fiat_currency=excluded.fiat_currency,
                     payment_method=excluded.payment_method,
+                    maker_bond_amount=excluded.maker_bond_amount,
+                    taker_bond_amount=excluded.taker_bond_amount,
                     is_active=excluded.is_active,
                     taken_by=excluded.taken_by,
                     trade_id=excluded.trade_id,
@@ -371,6 +389,8 @@ class SQLiteTradeRepository:
                     offer.premium_pct,
                     offer.fiat_currency,
                     offer.payment_method,
+                    offer.maker_bond_amount,
+                    offer.taker_bond_amount,
                     1 if offer.is_active else 0,
                     offer.taken_by,
                     offer.trade_id,
@@ -386,6 +406,7 @@ class SQLiteTradeRepository:
                 """
                 SELECT
                     offer_id, maker_id, amount_xmr, premium_pct, fiat_currency, payment_method,
+                    maker_bond_amount, taker_bond_amount,
                     is_active, taken_by, trade_id, created_at, updated_at
                 FROM offers
                 WHERE offer_id = ?
@@ -402,6 +423,7 @@ class SQLiteTradeRepository:
                 """
                 SELECT
                     offer_id, maker_id, amount_xmr, premium_pct, fiat_currency, payment_method,
+                    maker_bond_amount, taker_bond_amount,
                     is_active, taken_by, trade_id, created_at, updated_at
                 FROM offers
                 WHERE is_active = 1

@@ -68,13 +68,13 @@ class CreateOfferRequest(BaseModel):
     premium_pct: float = Field(default=0.0)
     fiat_currency: str = Field(min_length=2)
     payment_method: str = Field(min_length=1)
+    maker_bond_amount_xmr: float = Field(default=0.01, gt=0)
+    taker_bond_amount_xmr: float = Field(default=0.01, gt=0)
 
 
 class TakeOfferRequest(BaseModel):
     taker_id: str = Field(min_length=1)
     required_confirmations: int = Field(default=10, ge=1)
-    maker_bond_amount_xmr: float = Field(default=0.01, gt=0)
-    taker_bond_amount_xmr: float = Field(default=0.01, gt=0)
 
 
 class TradeResponse(BaseModel):
@@ -111,6 +111,8 @@ class OfferResponse(BaseModel):
     premium_pct: float
     fiat_currency: str
     payment_method: str
+    maker_bond_amount: float
+    taker_bond_amount: float
     is_active: bool
     taken_by: str | None
     trade_id: str | None
@@ -160,6 +162,8 @@ def to_offer_response(offer: Offer) -> OfferResponse:
         premium_pct=offer.premium_pct,
         fiat_currency=offer.fiat_currency,
         payment_method=offer.payment_method,
+        maker_bond_amount=offer.maker_bond_amount,
+        taker_bond_amount=offer.taker_bond_amount,
         is_active=offer.is_active,
         taken_by=offer.taken_by,
         trade_id=offer.trade_id,
@@ -236,6 +240,12 @@ def create_app(
 
     @app.post("/offers", response_model=OfferResponse)
     def create_offer(payload: CreateOfferRequest) -> OfferResponse:
+        try:
+            enforce_seller_open_trade_limit(
+                trade_repository, payload.maker_id, risk_limits
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         offer = Offer(
             offer_id=str(uuid4()),
             maker_id=payload.maker_id,
@@ -243,6 +253,8 @@ def create_app(
             premium_pct=payload.premium_pct,
             fiat_currency=payload.fiat_currency.upper(),
             payment_method=payload.payment_method,
+            maker_bond_amount=payload.maker_bond_amount_xmr,
+            taker_bond_amount=payload.taker_bond_amount_xmr,
         )
         trade_repository.save_offer(offer)
         return to_offer_response(offer)
@@ -266,14 +278,16 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+        # Offer-to-trade conversion: taker accepts posted maker offer and we immediately
+        # instantiate a real trade in FUNDS_PENDING with inherited bond config.
         trade = Trade(
             trade_id=str(uuid4()),
             amount_xmr=offer.amount_xmr,
             seller_id=offer.maker_id,
             buyer_id=payload.taker_id,
             required_confirmations=payload.required_confirmations,
-            maker_bond_amount=payload.maker_bond_amount_xmr,
-            taker_bond_amount=payload.taker_bond_amount_xmr,
+            maker_bond_amount=offer.maker_bond_amount,
+            taker_bond_amount=offer.taker_bond_amount,
         )
         assign_trade_deposit(trade, wallet_rpc)
         assign_trade_bonds(trade, wallet_rpc)

@@ -376,6 +376,8 @@ def test_offer_create_list_and_take_flow(client: TestClient) -> None:
             "premium_pct": 1.5,
             "fiat_currency": "USD",
             "payment_method": "SEPA",
+            "maker_bond_amount_xmr": 0.07,
+            "taker_bond_amount_xmr": 0.04,
         },
     )
     assert created_offer.status_code == 200
@@ -383,6 +385,8 @@ def test_offer_create_list_and_take_flow(client: TestClient) -> None:
     offer_id = offer["offer_id"]
     assert offer["is_active"] is True
     assert offer["fiat_currency"] == "USD"
+    assert offer["maker_bond_amount"] == 0.07
+    assert offer["taker_bond_amount"] == 0.04
 
     offers_list = client.get("/offers")
     assert offers_list.status_code == 200
@@ -401,6 +405,8 @@ def test_offer_create_list_and_take_flow(client: TestClient) -> None:
     assert trade["deposit_address"] is not None
     assert trade["maker_bond_address"] is not None
     assert trade["taker_bond_address"] is not None
+    assert trade["maker_bond_amount"] == 0.07
+    assert trade["taker_bond_amount"] == 0.04
 
     offers_after_take = client.get("/offers")
     assert offers_after_take.status_code == 200
@@ -432,3 +438,28 @@ def test_take_offer_rejects_inactive_offer(client: TestClient) -> None:
         json={"taker_id": "taker-offer-3"},
     )
     assert second_take.status_code == 400
+
+
+def test_offer_creation_enforces_seller_risk_limit(client: TestClient) -> None:
+    for _ in range(3):
+        made = client.post(
+            "/trades",
+            json={
+                "amount_xmr": 0.2,
+                "seller_id": "maker-risk-limited",
+                "required_confirmations": 10,
+            },
+        )
+        assert made.status_code == 200
+
+    blocked_offer = client.post(
+        "/offers",
+        json={
+            "maker_id": "maker-risk-limited",
+            "amount_xmr": 0.15,
+            "premium_pct": 1.0,
+            "fiat_currency": "USD",
+            "payment_method": "SEPA",
+        },
+    )
+    assert blocked_offer.status_code == 400

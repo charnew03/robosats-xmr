@@ -101,9 +101,11 @@ No milestone is complete until tests for that milestone pass locally and evidenc
 
 ## Phase 4 Order Book Checklist (In progress)
 
-- [ ] Makers can create public offers (`POST /offers`).
-- [ ] Active offers can be listed (`GET /offers`).
-- [ ] Taker can take an offer (`POST /offers/{offer_id}/take`) to create trade in `FUNDS_PENDING`.
-- [ ] Offer taking allocates escrow + maker/taker bond subaddresses.
-- [ ] Offer lifecycle guards prevent taking inactive offers.
-- [ ] Integration tests cover create offer -> take offer -> trade creation flow.
+- [x] Makers can create public offers (`POST /offers`).
+- [x] Active offers can be listed (`GET /offers`).
+- [x] Taker can take an offer (`POST /offers/{offer_id}/take`) to create trade in `FUNDS_PENDING`.
+- [x] Offer taking allocates escrow + maker/taker bond subaddresses.
+- [x] Offer taking trade inherits bond amounts from the offer.
+- [x] Offer lifecycle guards prevent taking inactive offers.
+- [x] Risk limits enforced on offer creation for makers.
+- [x] Integration tests cover create offer -> list -> take -> trade creation flow.
