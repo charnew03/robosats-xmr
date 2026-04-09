@@ -55,6 +55,20 @@ def test_api_assign_deposit_sets_bond_addresses_and_amounts(client: TestClient) 
     assert a["maker_bond_address"] != a["taker_bond_address"]
     assert a["maker_bond_address"] != a["deposit_address"]
 
+    fetched = client.get(f"/trades/{trade_id}")
+    assert fetched.status_code == 200
+    trade = fetched.json()
+    assert trade["maker_bond_amount"] == 0.05
+    assert trade["taker_bond_amount"] == 0.03
+    assert trade["maker_bond_address"]
+    assert trade["taker_bond_address"]
+
+    listed = client.get("/trades")
+    assert listed.status_code == 200
+    by_id = {t["trade_id"]: t for t in listed.json()}
+    assert by_id[trade_id]["maker_bond_amount"] == 0.05
+    assert by_id[trade_id]["taker_bond_amount"] == 0.03
+
 
 def test_api_collaborative_cancel_before_funding(client: TestClient) -> None:
     r = client.post("/trades", json={"amount_xmr": 0.2, "seller_id": "seller-can"})
@@ -65,6 +79,44 @@ def test_api_collaborative_cancel_before_funding(client: TestClient) -> None:
     )
     assert cancel.status_code == 200
     assert cancel.json()["state"] == "CANCELLED"
+
+
+def test_api_collaborative_cancel_can_return_bonds_with_fake_wallet(tmp_path) -> None:
+    db_path = tmp_path / "cancel-bonds.db"
+    app = create_app(db_path=str(db_path), use_fake_wallet=True)
+    client = TestClient(app)
+
+    created = client.post(
+        "/trades",
+        json={"amount_xmr": 0.4, "seller_id": "seller-bond-cancel"},
+    )
+    trade_id = created.json()["trade_id"]
+    assigned = client.post(f"/trades/{trade_id}/assign-deposit")
+    assert assigned.status_code == 200
+    maker_bond_address = assigned.json()["maker_bond_address"]
+    taker_bond_address = assigned.json()["taker_bond_address"]
+    assert maker_bond_address and taker_bond_address
+
+    cancel = client.post(
+        f"/trades/{trade_id}/cancel",
+        json={
+            "actor_id": "seller-bond-cancel",
+            "reason": "mutual cancel",
+            "maker_return_address": "48xmrMakerReturn",
+            "taker_return_address": "48xmrTakerReturn",
+        },
+    )
+    assert cancel.status_code == 200
+    assert cancel.json()["state"] == "CANCELLED"
+
+    with sqlite3.connect(db_path) as conn:
+        note = conn.execute(
+            "SELECT note FROM audit_events WHERE trade_id = ? AND action = ? ORDER BY id DESC LIMIT 1",
+            (trade_id, "collaborative_cancel"),
+        ).fetchone()
+    assert note is not None
+    assert "maker_bond_returned:fake-bond-from-" in note[0]
+    assert "taker_bond_returned:fake-bond-from-" in note[0]
 
 
 def test_api_collaborative_cancel_rejects_after_funded(client: TestClient) -> None:
@@ -78,6 +130,25 @@ def test_api_collaborative_cancel_rejects_after_funded(client: TestClient) -> No
         json={"actor_id": "x", "reason": "too late"},
     )
     assert bad.status_code == 400
+
+
+def test_phase3_mark_fiat_paid_requires_bond_accounting(tmp_path) -> None:
+    db_path = tmp_path / "legacy-bonds.db"
+    repo = SQLiteTradeRepository(db_path=str(db_path))
+    # Legacy-style funded trade without bond addresses should be rejected by Phase 3 guard.
+    legacy = Trade(
+        trade_id="legacy-no-bonds",
+        amount_xmr=1.0,
+        seller_id="seller-legacy",
+        state=TradeState.FUNDED,
+    )
+    repo.save(legacy)
+
+    app = create_app(db_path=str(db_path), use_fake_wallet=True)
+    client = TestClient(app)
+    res = client.post("/trades/legacy-no-bonds/mark-fiat-paid")
+    assert res.status_code == 400
+    assert "bond subaddresses" in res.json()["detail"]
 
 
 def test_sweeper_loop_respects_max_iterations() -> None:

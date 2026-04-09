@@ -31,3 +31,16 @@ class FakeWalletFundingRPC:
             f"fake-escrow-from-{deposit_subaddress[:16]}-"
             f"to-{buyer_address[:12]}-amt-{amount_xmr}"
         )
+
+    def release_bond(
+        self, bond_subaddress: str, return_address: str, amount_xmr: float
+    ) -> str:
+        """Simulate returning a maker/taker bond from bond subaddress."""
+        if not bond_subaddress or not return_address or amount_xmr <= 0:
+            raise ValueError("invalid bond release parameters")
+        if bond_subaddress not in self.confirmations_by_address:
+            raise ValueError("unknown bond subaddress for fake wallet")
+        return (
+            f"fake-bond-from-{bond_subaddress[:16]}-"
+            f"to-{return_address[:12]}-amt-{amount_xmr}"
+        )

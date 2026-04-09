@@ -11,6 +11,10 @@ class EscrowReleaseWallet(Protocol):
         self, deposit_subaddress: str, buyer_address: str, amount_xmr: float
     ) -> str: ...
 
+    def release_bond(
+        self, bond_subaddress: str, return_address: str, amount_xmr: float
+    ) -> str: ...
+
 
 def release_escrow_to_buyer(
     wallet: EscrowReleaseWallet,
@@ -27,6 +31,18 @@ def release_escrow_to_buyer(
     return wallet.release_escrow_to_buyer(
         deposit_subaddress, buyer_address, amount_xmr
     )
+
+
+def release_bond_to_owner(
+    wallet: EscrowReleaseWallet,
+    bond_subaddress: str,
+    return_address: str,
+    amount_xmr: float,
+) -> str:
+    """
+    Return a bond amount from its dedicated bond subaddress to owner return address.
+    """
+    return wallet.release_bond(bond_subaddress, return_address, amount_xmr)
 
 
 class WalletRPC(Protocol):

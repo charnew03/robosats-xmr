@@ -18,7 +18,7 @@ from backend.repository import SQLiteTradeRepository, TradeRepository
 from backend.risk_limits import RiskLimits, enforce_seller_open_trade_limit
 from backend.rate_limit import RateLimiter
 from backend.trade_engine import Trade, TradeState
-from backend.wallet_adapter import release_escrow_to_buyer
+from backend.wallet_adapter import release_bond_to_owner, release_escrow_to_buyer
 
 
 logger = logging.getLogger(__name__)
@@ -51,6 +51,8 @@ class CollaborativeCancelRequest(BaseModel):
 
     actor_id: str = Field(min_length=1)
     reason: str = Field(min_length=1)
+    maker_return_address: str | None = None
+    taker_return_address: str | None = None
 
 
 class TradeResponse(BaseModel):
@@ -208,6 +210,32 @@ def create_app(
                 status_code=400,
                 detail="collaborative cancel only allowed before trade is FUNDED",
             )
+        bond_notes: list[str] = []
+        # Phase 3: optional bond return flow. If return addresses are supplied and
+        # bond subaddresses are already allocated, return bond notionals before cancel.
+        try:
+            if payload.maker_return_address and trade.maker_bond_address:
+                maker_txid = release_bond_to_owner(
+                    wallet_rpc,
+                    trade.maker_bond_address,
+                    payload.maker_return_address,
+                    trade.maker_bond_amount,
+                )
+                bond_notes.append(f"maker_bond_returned:{maker_txid}")
+            if payload.taker_return_address and trade.taker_bond_address:
+                taker_txid = release_bond_to_owner(
+                    wallet_rpc,
+                    trade.taker_bond_address,
+                    payload.taker_return_address,
+                    trade.taker_bond_amount,
+                )
+                bond_notes.append(f"taker_bond_returned:{taker_txid}")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=502, detail=f"wallet bond return failed: {exc}"
+            ) from exc
         try:
             trade.cancel(f"collaborative: {payload.reason}")
         except ValueError as exc:
@@ -223,7 +251,7 @@ def create_app(
                 trade_id,
                 payload.actor_id,
                 "collaborative_cancel",
-                payload.reason,
+                "; ".join([payload.reason, *bond_notes]) if bond_notes else payload.reason,
             )
         return to_trade_response(trade)
 
@@ -291,6 +319,7 @@ def create_app(
                 detail="trade is RELEASED or DISPUTED; no further settlement actions",
             )
         try:
+            _ensure_bonds_accounted_for(trade)
             trade.mark_fiat_paid()
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -325,6 +354,7 @@ def create_app(
                 status_code=400, detail="trade has no deposit address for escrow release"
             )
         try:
+            _ensure_bonds_accounted_for(trade)
             # Wallet sends the exact trade notional toward the buyer; fake wallet simulates
             # from the deposit subaddress; real RPC prefers subaddr_indices when known.
             txid = release_escrow_to_buyer(
@@ -381,6 +411,16 @@ def create_app(
                 trade_id, trade.seller_id, "dispute_opened", payload.reason
             )
         return to_trade_response(trade)
+
+    def _ensure_bonds_accounted_for(trade: Trade) -> None:
+        # Basic Phase 3 guard: settlement actions require bond amounts and
+        # subaddresses to be present, proving bond accounting has been configured.
+        if trade.maker_bond_amount <= 0 or trade.taker_bond_amount <= 0:
+            raise ValueError("maker/taker bond amounts must be configured before settlement")
+        if not trade.maker_bond_address or not trade.taker_bond_address:
+            raise ValueError(
+                "maker/taker bond subaddresses must be assigned before settlement"
+            )
 
     @app.get("/trades/{trade_id}", response_model=TradeResponse)
     def get_trade(trade_id: str) -> TradeResponse:

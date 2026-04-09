@@ -6,7 +6,7 @@ Monero-focused fork project inspired by RoboSats.
 
 - ✅ Phase 1 (Core trade creation, deposit assignment, funding & status handling) — COMPLETE
 - ✅ Phase 2 (settlement + disputes) — COMPLETE (see `docs/TESTING.md` checklist).
-- Phase 3 (bonds + basic hardening) — IN PROGRESS (first slice: bonds, sweeper runner, collaborative cancel; see `docs/TESTING.md`).
+- Phase 3 (bonds + basic hardening) — IN PROGRESS (first slice complete: bonds, sweeper, collaborative cancel; see `docs/TESTING.md`).
 
 ## Objective
 
@@ -86,9 +86,10 @@ Phase 2 (settlement + disputes):
 Phase 3 (first slice):
 
 - **Maker/taker bonds** — amounts set on `POST /trades` (`maker_bond_amount_xmr`, `taker_bond_amount_xmr`, defaults `0.01`); separate subaddresses generated at `assign-deposit` (seller = maker, buyer = taker when present).
+- **Bond accounting checks** — settlement actions verify bond amounts and bond subaddresses are present before allowing `mark-fiat-paid` / `release-escrow`.
 - **Risk limits** — max open trades per seller enforced at trade creation (`ROBOSATS_XMR_MAX_OPEN_TRADES_PER_SELLER`, default `3`).
 - **Stale trade sweeper** — cancels timed-out `CREATED` / `FUNDS_PENDING` trades with audit logging; run periodically via `python -m backend.sweeper_main` (`ROBOSATS_XMR_SWEEPER_INTERVAL_SECONDS`, default `300`).
-- **Collaborative cancel** — `POST .../cancel` while `CREATED` or `FUNDS_PENDING` only.
+- **Collaborative cancel** — `POST .../cancel` while `CREATED` or `FUNDS_PENDING` only, with optional bond-return wallet sends (fake + real RPC support).
 
 Some hardening (rate limits, open-trade cap, sweeper module) existed early; Phase 3 wires the **sweeper runner** and adds **bonds + cancel + audit** as above.
 
@@ -120,7 +121,7 @@ Some hardening (rate limits, open-trade cap, sweeper module) existed early; Phas
 
 ## Status & Next Steps
 
-- ✅ Phase 1 — COMPLETE | ✅ Phase 2 — COMPLETE | Phase 3 (bonds + basic hardening) — IN PROGRESS
+- ✅ Phase 1 — COMPLETE | ✅ Phase 2 — COMPLETE | Phase 3 (bonds + basic hardening) — IN PROGRESS (first slice complete: bonds, sweeper, collaborative cancel)
 - Phases 1 and 2 checklists in `docs/TESTING.md` are green; Phase 3 checklist tracks the current hardening slice (also in `docs/TESTING.md`).
 - Next: extend Phase 3 (bond verification, reconciliation, deeper abuse tests) without regressing Phases 1–2.
 

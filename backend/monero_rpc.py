@@ -137,3 +137,15 @@ class MoneroWalletRPC:
         if not tx_hash:
             raise RuntimeError("wallet rpc did not return tx hash")
         return str(tx_hash)
+
+    def release_bond(
+        self, bond_subaddress: str, return_address: str, amount_xmr: float
+    ) -> str:
+        """
+        Return a bond amount from bond subaddress back to owner return address.
+        """
+        return self.release_escrow_to_buyer(
+            deposit_subaddress=bond_subaddress,
+            buyer_address=return_address,
+            amount_xmr=amount_xmr,
+        )

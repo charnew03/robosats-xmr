@@ -68,7 +68,8 @@ class SQLiteTradeRepository:
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.db_path)
+        # Allow watcher + sweeper + API to share SQLite with fewer transient locks.
+        return sqlite3.connect(self.db_path, timeout=30)
 
     def _init_db(self) -> None:
         with self._connect() as conn:
