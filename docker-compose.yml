@@ -33,11 +33,25 @@ services:
     volumes:
       - wallet_rpc_data:/wallet
 
+  wallet-init:
+    image: curlimages/curl:8.7.1
+    container_name: robosats-xmr-wallet-init
+    depends_on:
+      - wallet-rpc
+    environment:
+      MONERO_WALLET_RPC_URL: http://wallet-rpc:18083
+      MONERO_COORDINATOR_WALLET_NAME: coordinator
+      MONERO_COORDINATOR_WALLET_PASSWORD: ""
+    volumes:
+      - ./docker/init-coordinator-wallet.sh:/init-coordinator-wallet.sh:ro
+    command: ["/bin/sh", "/init-coordinator-wallet.sh"]
+
   api:
     build: .
     container_name: robosats-xmr-api
     depends_on:
       - wallet-rpc
+      - wallet-init
     ports:
       - "8000:8000"
     environment:

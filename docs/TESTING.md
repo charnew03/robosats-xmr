@@ -82,12 +82,13 @@ No milestone is complete until tests for that milestone pass locally and evidenc
 - [x] Integration tests: happy path (`FUNDED` → mark-fiat → release-escrow with fake txid); dispute from `FUNDED` and from `FIAT_MARKED_PAID`; invalid transition coverage; persistence of `release_txid` / disputed fields (see `tests/test_repository.py`).
 - [x] `pytest -q` green for Phase 2 paths (per working agreement below).
 
-## Phase 3 Bonds + Basic Hardening Checklist (In progress — first slice complete)
+## Phase 3 Bonds + Basic Hardening Checklist
 
 - [x] Maker/taker bond amounts on trade creation; bond subaddresses at `assign-deposit` (wallet / fake wallet).
 - [x] Subaddress index tracking recorded on trade (`deposit_subaddress_index`, `maker_bond_subaddress_index`, `taker_bond_subaddress_index`).
 - [x] Trade API responses include bond fields (`maker_bond_*`, `taker_bond_*`).
 - [x] Confirmation tracking exposed for bonds (`maker_bond_confirmations`, `taker_bond_confirmations`) plus deposit confirmations.
+- [x] Wallet adapter reconciliation supports `get_transfers`-style transfer activity (`confirmations` + total received amount).
 - [x] Seller open-trade limit enforced at `POST /trades` (`risk_limits`).
 - [x] Stale trade sweeper cancels expired `CREATED` / `FUNDS_PENDING` and writes `sweeper_cancel` audit events (SQLite).
 - [x] Background sweeper runner: `python -m backend.sweeper_main` (`ROBOSATS_XMR_SWEEPER_INTERVAL_SECONDS`).
@@ -97,5 +98,3 @@ No milestone is complete until tests for that milestone pass locally and evidenc
 - [x] Dispute flow logs bond-slash placeholder (`bond_slash_placeholder`) for coordinator-retained-bonds policy draft.
 - [x] Audit event `bonds_assigned` on assign-deposit.
 - [x] `pytest -q` green including Phase 3 tests.
-
-Further Phase 3 work remains (next slice): full bond funding verification, reconciliation jobs, deeper abuse/adversarial tests.
