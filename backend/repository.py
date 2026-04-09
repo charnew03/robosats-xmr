@@ -34,6 +34,11 @@ def _trade_from_row(row: tuple) -> Trade:
         taker_bond_address=row[18],
         maker_bond_amount=float(maker_amt) if maker_amt is not None else 0.01,
         taker_bond_amount=float(taker_amt) if taker_amt is not None else 0.01,
+        maker_bond_confirmations=row[21] if row[21] is not None else 0,
+        taker_bond_confirmations=row[22] if row[22] is not None else 0,
+        deposit_subaddress_index=row[23],
+        maker_bond_subaddress_index=row[24],
+        taker_bond_subaddress_index=row[25],
     )
 
 
@@ -91,6 +96,15 @@ class SQLiteTradeRepository:
                     required_confirmations INTEGER NOT NULL,
                     current_confirmations INTEGER NOT NULL,
                     funded_at TEXT,
+                    maker_bond_address TEXT,
+                    taker_bond_address TEXT,
+                    maker_bond_amount REAL,
+                    taker_bond_amount REAL,
+                    maker_bond_confirmations INTEGER,
+                    taker_bond_confirmations INTEGER,
+                    deposit_subaddress_index INTEGER,
+                    maker_bond_subaddress_index INTEGER,
+                    taker_bond_subaddress_index INTEGER,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
@@ -123,6 +137,11 @@ class SQLiteTradeRepository:
                 "taker_bond_address": "TEXT",
                 "maker_bond_amount": "REAL",
                 "taker_bond_amount": "REAL",
+                "maker_bond_confirmations": "INTEGER",
+                "taker_bond_confirmations": "INTEGER",
+                "deposit_subaddress_index": "INTEGER",
+                "maker_bond_subaddress_index": "INTEGER",
+                "taker_bond_subaddress_index": "INTEGER",
             }
             for col, col_type in wanted_cols.items():
                 if col not in existing_cols:
@@ -139,8 +158,10 @@ class SQLiteTradeRepository:
                     required_confirmations, current_confirmations,
                     funded_at, created_at, updated_at,
                     maker_bond_address, taker_bond_address,
-                    maker_bond_amount, taker_bond_amount
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    maker_bond_amount, taker_bond_amount,
+                    maker_bond_confirmations, taker_bond_confirmations,
+                    deposit_subaddress_index, maker_bond_subaddress_index, taker_bond_subaddress_index
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(trade_id) DO UPDATE SET
                     state=excluded.state,
                     amount_xmr=excluded.amount_xmr,
@@ -161,7 +182,12 @@ class SQLiteTradeRepository:
                     maker_bond_address=excluded.maker_bond_address,
                     taker_bond_address=excluded.taker_bond_address,
                     maker_bond_amount=excluded.maker_bond_amount,
-                    taker_bond_amount=excluded.taker_bond_amount
+                    taker_bond_amount=excluded.taker_bond_amount,
+                    maker_bond_confirmations=excluded.maker_bond_confirmations,
+                    taker_bond_confirmations=excluded.taker_bond_confirmations,
+                    deposit_subaddress_index=excluded.deposit_subaddress_index,
+                    maker_bond_subaddress_index=excluded.maker_bond_subaddress_index,
+                    taker_bond_subaddress_index=excluded.taker_bond_subaddress_index
                 """,
                 (
                     trade.trade_id,
@@ -185,6 +211,11 @@ class SQLiteTradeRepository:
                     trade.taker_bond_address,
                     trade.maker_bond_amount,
                     trade.taker_bond_amount,
+                    trade.maker_bond_confirmations,
+                    trade.taker_bond_confirmations,
+                    trade.deposit_subaddress_index,
+                    trade.maker_bond_subaddress_index,
+                    trade.taker_bond_subaddress_index,
                 ),
             )
         return trade
@@ -200,7 +231,9 @@ class SQLiteTradeRepository:
                     required_confirmations, current_confirmations,
                     funded_at, created_at, updated_at,
                     maker_bond_address, taker_bond_address,
-                    maker_bond_amount, taker_bond_amount
+                    maker_bond_amount, taker_bond_amount,
+                    maker_bond_confirmations, taker_bond_confirmations,
+                    deposit_subaddress_index, maker_bond_subaddress_index, taker_bond_subaddress_index
                 FROM trades
                 WHERE trade_id = ?
                 """,
@@ -223,7 +256,9 @@ class SQLiteTradeRepository:
                     required_confirmations, current_confirmations,
                     funded_at, created_at, updated_at,
                     maker_bond_address, taker_bond_address,
-                    maker_bond_amount, taker_bond_amount
+                    maker_bond_amount, taker_bond_amount,
+                    maker_bond_confirmations, taker_bond_confirmations,
+                    deposit_subaddress_index, maker_bond_subaddress_index, taker_bond_subaddress_index
                 FROM trades
                 """
             ).fetchall()

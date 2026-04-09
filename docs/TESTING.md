@@ -85,12 +85,16 @@ No milestone is complete until tests for that milestone pass locally and evidenc
 ## Phase 3 Bonds + Basic Hardening Checklist (In progress — first slice complete)
 
 - [x] Maker/taker bond amounts on trade creation; bond subaddresses at `assign-deposit` (wallet / fake wallet).
+- [x] Subaddress index tracking recorded on trade (`deposit_subaddress_index`, `maker_bond_subaddress_index`, `taker_bond_subaddress_index`).
 - [x] Trade API responses include bond fields (`maker_bond_*`, `taker_bond_*`).
+- [x] Confirmation tracking exposed for bonds (`maker_bond_confirmations`, `taker_bond_confirmations`) plus deposit confirmations.
 - [x] Seller open-trade limit enforced at `POST /trades` (`risk_limits`).
 - [x] Stale trade sweeper cancels expired `CREATED` / `FUNDS_PENDING` and writes `sweeper_cancel` audit events (SQLite).
 - [x] Background sweeper runner: `python -m backend.sweeper_main` (`ROBOSATS_XMR_SWEEPER_INTERVAL_SECONDS`).
-- [x] Collaborative cancel: `POST /trades/{trade_id}/cancel` before `FUNDED`, with audit trail.
+- [x] Collaborative cancel: `POST /trades/{trade_id}/cancel` before `FUNDED`, with optional bond-return sends and audit trail.
 - [x] Settlement guards validate bonds are present/accounted for before `mark-fiat-paid` and `release-escrow`.
+- [x] Successful release supports optional maker/taker bond return sends and logs txids in audit notes.
+- [x] Dispute flow logs bond-slash placeholder (`bond_slash_placeholder`) for coordinator-retained-bonds policy draft.
 - [x] Audit event `bonds_assigned` on assign-deposit.
 - [x] `pytest -q` green including Phase 3 tests.
 

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import httpx
+
+from backend.wallet_adapter import TransferActivity
 
 
 @dataclass
@@ -11,6 +13,7 @@ class MoneroWalletRPC:
     password: str
     account_index: int = 0
     timeout_seconds: float = 10.0
+    _subaddress_index_by_address: dict[str, int] = field(default_factory=dict)
 
     def _call(self, method: str, params: dict | None = None) -> dict:
         payload = {
@@ -48,23 +51,43 @@ class MoneroWalletRPC:
         address = result.get("address")
         if not address:
             raise RuntimeError("wallet rpc did not return address")
+        maybe_index = result.get("address_index")
+        if isinstance(maybe_index, int):
+            self._subaddress_index_by_address[address] = maybe_index
         return address
 
+    def get_subaddress_index(self, address: str) -> int | None:
+        if address in self._subaddress_index_by_address:
+            return self._subaddress_index_by_address[address]
+        result = self._call("get_address", {"account_index": self.account_index})
+        for entry in result.get("addresses", []):
+            if entry.get("address") == address:
+                idx = entry.get("address_index")
+                if isinstance(idx, int):
+                    self._subaddress_index_by_address[address] = idx
+                    return idx
+        return None
+
     def get_confirmations(self, address: str) -> int:
+        return self.get_transfer_activity(address).confirmations
+
+    def get_transfer_activity(self, address: str) -> TransferActivity:
         result = self._call(
             "get_transfers",
             {"in": True, "account_index": self.account_index},
         )
-        incoming = result.get("in", [])
+        incoming = [
+            transfer
+            for transfer in result.get("in", [])
+            if transfer.get("address") == address
+        ]
         if not incoming:
-            return 0
-        return max(
-            (
-                int(transfer.get("confirmations", 0))
-                for transfer in incoming
-                if transfer.get("address") == address
-            ),
-            default=0,
+            return TransferActivity(confirmations=0, total_received_xmr=0.0)
+        confirmations = max(int(transfer.get("confirmations", 0)) for transfer in incoming)
+        atomic_total = sum(int(transfer.get("amount", 0)) for transfer in incoming)
+        return TransferActivity(
+            confirmations=confirmations,
+            total_received_xmr=atomic_total / 1e12,
         )
 
     def send_xmr(self, address: str, amount_xmr: float) -> str:

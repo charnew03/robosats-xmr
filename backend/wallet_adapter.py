@@ -4,6 +4,12 @@ from dataclasses import dataclass
 from typing import Protocol
 
 
+@dataclass(frozen=True)
+class TransferActivity:
+    confirmations: int
+    total_received_xmr: float
+
+
 class EscrowReleaseWallet(Protocol):
     """Wallet capable of sending the trade escrow amount toward the buyer payout."""
 
@@ -51,6 +57,16 @@ class WalletRPC(Protocol):
     def is_synced(self) -> bool: ...
 
 
+class FundingPollingWallet(Protocol):
+    def get_confirmations(self, address: str) -> int: ...
+
+    def get_transfer_activity(self, address: str) -> TransferActivity: ...
+
+
+class SubaddressWallet(Protocol):
+    def get_subaddress_index(self, address: str) -> int | None: ...
+
+
 @dataclass(frozen=True)
 class WalletHealth:
     rpc_reachable: bool
@@ -70,3 +86,20 @@ def check_wallet_health(wallet_rpc: WalletRPC) -> WalletHealth:
         wallet_version=version,
         synced=synced,
     )
+
+
+def reconcile_address_activity(
+    wallet: FundingPollingWallet, address: str
+) -> TransferActivity:
+    """
+    Reconcile inbound transfers for an address.
+
+    Prefer wallet-native transfer polling (amount + confirmations). Fallback callers
+    can still use `get_confirmations` behavior inside wallet implementations.
+    """
+    return wallet.get_transfer_activity(address)
+
+
+def resolve_subaddress_index(wallet: SubaddressWallet, address: str) -> int | None:
+    """Resolve subaddress minor index if wallet can map address->index."""
+    return wallet.get_subaddress_index(address)

@@ -1,11 +1,55 @@
 services:
+  monerod:
+    image: sethsimmons/simple-monerod:v0.18.3.4
+    container_name: robosats-xmr-monerod
+    command:
+      - --non-interactive
+      - --stagenet
+      - --rpc-bind-ip=0.0.0.0
+      - --rpc-bind-port=18081
+      - --confirm-external-bind
+      - --no-igd
+    ports:
+      - "18081:18081"
+    volumes:
+      - monerod_data:/home/monero/.bitmonero
+
+  wallet-rpc:
+    image: ghcr.io/monero-project/monero:latest
+    container_name: robosats-xmr-wallet-rpc
+    depends_on:
+      - monerod
+    command:
+      - monero-wallet-rpc
+      - --stagenet
+      - --daemon-address=monerod:18081
+      - --rpc-bind-ip=0.0.0.0
+      - --rpc-bind-port=18083
+      - --disable-rpc-login
+      - --wallet-dir=/wallet
+      - --confirm-external-bind
+    ports:
+      - "18083:18083"
+    volumes:
+      - wallet_rpc_data:/wallet
+
   api:
     build: .
     container_name: robosats-xmr-api
+    depends_on:
+      - wallet-rpc
     ports:
       - "8000:8000"
     environment:
       ROBOSATS_XMR_DB_PATH: /app/data/trades.db
       ROBOSATS_XMR_USE_FAKE_WALLET: "true"
+      MONERO_WALLET_RPC_URL: http://wallet-rpc:18083
+      MONERO_WALLET_RPC_USER: ""
+      MONERO_WALLET_RPC_PASSWORD: ""
+      MONERO_WALLET_ACCOUNT_INDEX: "0"
     volumes:
       - ./data:/app/data
+
+volumes:
+  monerod_data:
+  wallet_rpc_data:

@@ -73,6 +73,12 @@ class Trade:
     taker_bond_address: str | None = None
     maker_bond_amount: float = 0.01
     taker_bond_amount: float = 0.01
+    # Phase 3 subaddress reconciliation metadata.
+    deposit_subaddress_index: int | None = None
+    maker_bond_subaddress_index: int | None = None
+    taker_bond_subaddress_index: int | None = None
+    maker_bond_confirmations: int = 0
+    taker_bond_confirmations: int = 0
 
     def transition(self, target_state: TradeState, reason: str) -> TradeEvent:
         if target_state not in ALLOWED_TRANSITIONS[self.state]:

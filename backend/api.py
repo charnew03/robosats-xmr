@@ -18,7 +18,12 @@ from backend.repository import SQLiteTradeRepository, TradeRepository
 from backend.risk_limits import RiskLimits, enforce_seller_open_trade_limit
 from backend.rate_limit import RateLimiter
 from backend.trade_engine import Trade, TradeState
-from backend.wallet_adapter import release_bond_to_owner, release_escrow_to_buyer
+from backend.wallet_adapter import (
+    reconcile_address_activity,
+    release_bond_to_owner,
+    release_escrow_to_buyer,
+    resolve_subaddress_index,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -40,6 +45,8 @@ class SeedConfirmationsRequest(BaseModel):
 
 class ReleaseRequest(BaseModel):
     buyer_payout_address: str = Field(min_length=1)
+    maker_return_address: str | None = None
+    taker_return_address: str | None = None
 
 
 class DisputeRequest(BaseModel):
@@ -75,6 +82,11 @@ class TradeResponse(BaseModel):
     taker_bond_address: str | None = None
     maker_bond_amount: float = 0.01
     taker_bond_amount: float = 0.01
+    maker_bond_confirmations: int = 0
+    taker_bond_confirmations: int = 0
+    deposit_subaddress_index: int | None = None
+    maker_bond_subaddress_index: int | None = None
+    taker_bond_subaddress_index: int | None = None
 
 
 class HealthResponse(BaseModel):
@@ -103,6 +115,11 @@ def to_trade_response(trade: Trade) -> TradeResponse:
         taker_bond_address=trade.taker_bond_address,
         maker_bond_amount=trade.maker_bond_amount,
         taker_bond_amount=trade.taker_bond_amount,
+        maker_bond_confirmations=trade.maker_bond_confirmations,
+        taker_bond_confirmations=trade.taker_bond_confirmations,
+        deposit_subaddress_index=trade.deposit_subaddress_index,
+        maker_bond_subaddress_index=trade.maker_bond_subaddress_index,
+        taker_bond_subaddress_index=trade.taker_bond_subaddress_index,
     )
 
 
@@ -181,6 +198,15 @@ def create_app(
         assign_trade_deposit(trade, wallet_rpc)
         # Phase 3: separate subaddresses for maker (seller) and taker (buyer) bonds.
         assign_trade_bonds(trade, wallet_rpc)
+        trade.deposit_subaddress_index = resolve_subaddress_index(
+            wallet_rpc, trade.deposit_address
+        )
+        trade.maker_bond_subaddress_index = resolve_subaddress_index(
+            wallet_rpc, trade.maker_bond_address
+        )
+        trade.taker_bond_subaddress_index = resolve_subaddress_index(
+            wallet_rpc, trade.taker_bond_address
+        )
         trade_repository.save(trade)
         logger.info(
             "Phase3 bonds assigned: trade=%s maker_addr=%s taker_addr=%s",
@@ -281,6 +307,7 @@ def create_app(
             raise HTTPException(status_code=404, detail="trade not found")
         try:
             refresh_trade_funding(trade, wallet_rpc)
+            _refresh_bond_confirmations(trade)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         trade_repository.save(trade)
@@ -364,6 +391,23 @@ def create_app(
                 trade.amount_xmr,
             )
             trade.set_release(payload.buyer_payout_address, txid)
+            bond_returns: list[str] = []
+            if payload.maker_return_address and trade.maker_bond_address:
+                maker_txid = release_bond_to_owner(
+                    wallet_rpc,
+                    trade.maker_bond_address,
+                    payload.maker_return_address,
+                    trade.maker_bond_amount,
+                )
+                bond_returns.append(f"maker:{maker_txid}")
+            if payload.taker_return_address and trade.taker_bond_address:
+                taker_txid = release_bond_to_owner(
+                    wallet_rpc,
+                    trade.taker_bond_address,
+                    payload.taker_return_address,
+                    trade.taker_bond_amount,
+                )
+                bond_returns.append(f"taker:{taker_txid}")
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except RuntimeError as exc:
@@ -378,7 +422,10 @@ def create_app(
         )
         if hasattr(trade_repository, "add_audit_event"):
             trade_repository.add_audit_event(
-                trade_id, trade.seller_id, "release_escrow", txid
+                trade_id,
+                trade.seller_id,
+                "release_escrow",
+                "; ".join([txid, *bond_returns]) if bond_returns else txid,
             )
         return to_trade_response(trade)
 
@@ -410,6 +457,16 @@ def create_app(
             trade_repository.add_audit_event(
                 trade_id, trade.seller_id, "dispute_opened", payload.reason
             )
+            trade_repository.add_audit_event(
+                trade_id,
+                "coordinator",
+                "bond_slash_placeholder",
+                "disputed trade: bonds retained by coordinator (placeholder)",
+            )
+        logger.info(
+            "Phase3 bond slash placeholder: trade=%s bonds retained on dispute",
+            trade_id,
+        )
         return to_trade_response(trade)
 
     def _ensure_bonds_accounted_for(trade: Trade) -> None:
@@ -421,6 +478,20 @@ def create_app(
             raise ValueError(
                 "maker/taker bond subaddresses must be assigned before settlement"
             )
+        if (
+            trade.maker_bond_subaddress_index is None
+            or trade.taker_bond_subaddress_index is None
+            or trade.deposit_subaddress_index is None
+        ):
+            raise ValueError("bond/deposit subaddress indexes must be resolved")
+
+    def _refresh_bond_confirmations(trade: Trade) -> None:
+        if trade.maker_bond_address:
+            maker_activity = reconcile_address_activity(wallet_rpc, trade.maker_bond_address)
+            trade.maker_bond_confirmations = maker_activity.confirmations
+        if trade.taker_bond_address:
+            taker_activity = reconcile_address_activity(wallet_rpc, trade.taker_bond_address)
+            trade.taker_bond_confirmations = taker_activity.confirmations
 
     @app.get("/trades/{trade_id}", response_model=TradeResponse)
     def get_trade(trade_id: str) -> TradeResponse:
