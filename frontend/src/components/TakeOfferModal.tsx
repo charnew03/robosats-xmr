@@ -30,6 +30,8 @@ export function TakeOfferModal({ offer, onClose, onSuccess, onError }: Props) {
   }, [onClose]);
 
   if (!offer) return null;
+  // Narrow for closures (handleSubmit); TS does not keep `offer` narrowed inside nested functions.
+  const activeOffer = offer;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -45,7 +47,7 @@ export function TakeOfferModal({ offer, onClose, onSuccess, onError }: Props) {
     }
     setSubmitting(true);
     try {
-      const trade = await takeOffer(offer.offer_id, {
+      const trade = await takeOffer(activeOffer.offer_id, {
         taker_id: tid,
         required_confirmations: rc,
       });
@@ -84,16 +86,16 @@ export function TakeOfferModal({ offer, onClose, onSuccess, onError }: Props) {
           <div className="rounded-md border border-xmr-border bg-black/20 p-3 text-sm">
             <p className="text-xmr-muted">Amount</p>
             <p className="font-mono text-base">
-              {formatXmr(offer.amount_xmr)} XMR · {formatPremium(offer.premium_pct)} ·{" "}
-              {formatFiatCurrency(offer.fiat_currency)}
+              {formatXmr(activeOffer.amount_xmr)} XMR · {formatPremium(activeOffer.premium_pct)} ·{" "}
+              {formatFiatCurrency(activeOffer.fiat_currency)}
             </p>
             <p className="mt-2 text-xmr-muted">Payment</p>
-            <p>{offer.payment_method}</p>
+            <p>{activeOffer.payment_method}</p>
             <p className="mt-2 text-xmr-muted">Maker</p>
-            <p className="font-mono text-xs">{shortId(offer.maker_id)}</p>
+            <p className="font-mono text-xs">{shortId(activeOffer.maker_id)}</p>
             <p className="mt-2 text-xs text-xmr-muted">
-              Bonds: maker {formatXmr(offer.maker_bond_amount)} / taker{" "}
-              {formatXmr(offer.taker_bond_amount)} XMR
+              Bonds: maker {formatXmr(activeOffer.maker_bond_amount)} / taker{" "}
+              {formatXmr(activeOffer.taker_bond_amount)} XMR
             </p>
           </div>
 
