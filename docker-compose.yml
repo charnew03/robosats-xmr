@@ -64,6 +64,19 @@ services:
     volumes:
       - ./data:/app/data
 
+  tor:
+    image: dperson/torproxy:latest
+    container_name: robosats-xmr-tor
+    depends_on:
+      - api
+    command: -f /etc/tor/torrc
+    volumes:
+      - ./docker/tor/torrc:/etc/tor/torrc:ro
+      - tor_hidden_service:/var/lib/tor/robosats_api
+    ports:
+      - "9050:9050"
+
 volumes:
   monerod_data:
   wallet_rpc_data:
+  tor_hidden_service:

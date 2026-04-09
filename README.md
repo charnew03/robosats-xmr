@@ -7,8 +7,8 @@ A clean-slate FastAPI backend for a Monero-native RoboSats-style P2P fiat ↔ XM
 - ✅ Phase 1 (core trade creation, deposit assignment, funding/status handling) — COMPLETE
 - ✅ Phase 2 (settlement + disputes) — COMPLETE
 - ✅ Phase 3 (bonds + basic hardening) — COMPLETE
-- Phase 4 (Basic Order Book) — IN PROGRESS
-- Next milestones: minimal frontend order flow and stagenet demo using the basic order book + existing trade engine.
+- ✅ Phase 4 (Basic Order Book) — COMPLETE
+- Next milestones: Complete minimal frontend, add Tor/onion service support, stagenet demo, and final polish for bounty claim.
 
 No phase is marked complete unless tests and checklists in `docs/TESTING.md` are green.
 
@@ -63,6 +63,22 @@ No phase is marked complete unless tests and checklists in `docs/TESTING.md` are
 4. Enable API real wallet mode:
    - set `ROBOSATS_XMR_USE_FAKE_WALLET=false`
    - configure `MONERO_WALLET_RPC_URL`, `MONERO_WALLET_RPC_USER`, `MONERO_WALLET_RPC_PASSWORD`, `MONERO_WALLET_ACCOUNT_INDEX`
+
+### 3) Tor / onion service (privacy access path)
+
+Basic Tor support is included via the `tor` Docker service, which publishes an onion endpoint for the FastAPI backend.
+
+1. Start services (including Tor):
+   - `docker compose up --build -d`
+2. Read the generated onion hostname:
+   - `docker compose exec tor sh -lc "cat /var/lib/tor/robosats_api/hostname"`
+3. Use that `.onion` address from Tor Browser (or a Tor-enabled client) to reach the API over onion:
+   - `http://<generated-hostname>.onion`
+4. Optional SOCKS5 proxy is exposed on `127.0.0.1:9050` for local Tor-aware tooling.
+
+Notes:
+- Onion service maps external onion port `80` to internal `api:8000`.
+- For local frontend development, keep using `http://127.0.0.1:8000` unless you explicitly route frontend/API traffic through Tor.
 
 ## Background Jobs
 

@@ -1,0 +1,7 @@
+DataDirectory /var/lib/tor
+SocksPort 0.0.0.0:9050
+Log notice stdout
+
+HiddenServiceDir /var/lib/tor/robosats_api
+HiddenServiceVersion 3
+HiddenServicePort 80 api:8000
