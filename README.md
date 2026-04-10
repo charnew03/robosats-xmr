@@ -74,7 +74,7 @@ python scripts/seed_demo_offers.py
 
 The Vite frontend is not exposed as an onion service in this repo; use Tor Browser with a tunneled or separately hosted static build for full onion UI if needed.
 
-## Stagenet testing (Docker + optional screen recording)
+## Stagenet testing (Docker)
 
 `docker-compose.yml` runs **monerod** and **monero-wallet-rpc** on **stagenet** (ports `18081` / `18083`). By default the **API** still uses the **fake wallet** so you can exercise the UI without coins. For **on-chain** stagenet behaviour, follow the steps below.
 
@@ -100,7 +100,7 @@ Optional checks:
 - Stagenet daemon RPC (host): `http://127.0.0.1:18081`
 - Wallet RPC (host): `http://127.0.0.1:18083`
 
-### 2) Funding watcher (recommended for demos)
+### 2) Funding watcher (recommended for on-chain mode)
 
 The API does not mine blocks; confirmations move when **monerod** syncs and the watcher polls wallet RPC. In a **second terminal**, from the repo root (after `pip install -r requirements-dev.txt` or `requirements.txt`):
 
@@ -142,20 +142,9 @@ $env:ROBOSATS_XMR_DB_PATH="data/trades.db"
 python -m backend.sweeper_main
 ```
 
-### 4) Frontend + demo “clips” flow
+### 4) Fake-wallet stagenet stack (UI only, no coins)
 
-1. Start the UI: `cd frontend`, `npm install`, `npm run dev -- --host 127.0.0.1` (see §2 under [How to Run](#how-to-run)).
-2. Set `VITE_API_BASE_URL=http://127.0.0.1:8000` in `frontend/.env` if needed.
-3. Record short clips in a logical order, for example:
-   - **Stack health:** browser on `/docs` or `GET /health`, plus Docker Desktop showing services running.
-   - **Order book:** list offers, filters, refresh.
-   - **Create offer / take offer:** through to trade detail with escrow + bond addresses.
-   - **On-chain funding:** send stagenet XMR to the shown subaddresses; show watcher logs as confirmations increase until `FUNDED` (default **10** confirmations).
-   - **Settlement:** mark fiat paid → release escrow (and any bond behaviour you want to highlight).
-
-### 5) Fake-wallet stagenet stack (UI only, no coins)
-
-To run the same containers but keep **simulated** funding (good for quick UI captures without a faucet):
+To run the same containers but keep **simulated** funding (no faucet needed):
 
 ```bash
 docker compose up --build
