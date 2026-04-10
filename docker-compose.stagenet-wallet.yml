@@ -1,0 +1,6 @@
+# Merge with docker-compose.yml for on-chain stagenet testing (real monero-wallet-rpc).
+# Usage: docker compose -f docker-compose.yml -f docker-compose.stagenet-wallet.yml up --build
+services:
+  api:
+    environment:
+      ROBOSATS_XMR_USE_FAKE_WALLET: "false"

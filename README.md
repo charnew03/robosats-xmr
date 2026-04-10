@@ -4,15 +4,15 @@ A clean-slate FastAPI backend for a Monero-native RoboSats-style P2P fiat ↔ XM
 
 ## Status & Next Steps
 
-- ✅ Phase 1 (core trade creation, deposit assignment, funding/status handling) — COMPLETE
-- ✅ Phase 2 (settlement + disputes) — COMPLETE
-- ✅ Phase 3 (bonds + basic hardening) — COMPLETE
-- ✅ Phase 4 (Basic Order Book) — COMPLETE
-- ✅ **MVP frontend** — order book, create offer, dashboard, trade detail + local chat placeholder (see below)
+- Phase 1 (core trade creation, deposit assignment, funding/status handling) (completed)
+- Phase 2 (settlement + disputes) (completed)
+- Phase 3 (bonds + basic hardening) (completed)
+- Phase 4 (Basic Order Book) (completed)
+- **MVP frontend** — order book, create offer, dashboard, trade detail + local chat placeholder (see below) (completed)
 
 No phase is marked complete unless tests and checklists in `docs/TESTING.md` are green.
 
-## ✅ MVP Features
+## MVP Features
 
 **Backend**
 
@@ -61,7 +61,9 @@ python scripts/seed_demo_offers.py
 
 1. `docker compose up --build`
 2. API: `http://127.0.0.1:8000` · `monerod` RPC: `18081` · wallet-rpc: `18083`
-3. Set `ROBOSATS_XMR_USE_FAKE_WALLET=false` and wallet RPC env vars on the `api` service as documented in compose file comments
+3. For **real** wallet RPC against the bundled `monerod` / `wallet-rpc`, use the merge file:  
+   `docker compose -f docker-compose.yml -f docker-compose.stagenet-wallet.yml up --build`  
+   (sets `ROBOSATS_XMR_USE_FAKE_WALLET=false` on the `api` service; RPC URL/user/password already match the compose stack)
 
 ### 4) Tor / onion service (API only)
 
@@ -72,13 +74,96 @@ python scripts/seed_demo_offers.py
 
 The Vite frontend is not exposed as an onion service in this repo; use Tor Browser with a tunneled or separately hosted static build for full onion UI if needed.
 
-## Stagenet Demo
+## Stagenet testing (Docker + optional screen recording)
 
-1. Use the provided **Docker Compose** stack (`monerod` + `wallet-rpc` are configured for **stagenet** in `docker-compose.yml`).
-2. Start the stack, wait for wallet-init, set API env to **real wallet** mode (`ROBOSATS_XMR_USE_FAKE_WALLET=false`).
-3. Run the **API** and optionally the **funding watcher** (`python -m backend.watcher_main`) and **sweeper** (`python -m backend.sweeper_main`) for realistic behaviour.
-4. Run the **frontend** against the API base URL (localhost or LAN). Use **pseudonyms** in the UI; fund escrow/bond addresses shown in trade detail / API responses with stagenet XMR.
-5. For a public demo, place the API behind HTTPS or onion; ensure CORS (`ROBOSATS_XMR_CORS_ORIGINS`) includes your frontend origin.
+`docker-compose.yml` runs **monerod** and **monero-wallet-rpc** on **stagenet** (ports `18081` / `18083`). By default the **API** still uses the **fake wallet** so you can exercise the UI without coins. For **on-chain** stagenet behaviour, follow the steps below.
+
+### Prerequisites
+
+- Docker + Docker Compose
+- Python 3.11+ on the host if you run the watcher outside Docker (same as [How to Run](#how-to-run) §1)
+- Stagenet XMR for real funding (no monetary value): e.g. [Rino community stagenet faucet](https://community.rino.io/faucet/stagenet) or search for an active faucet; see [Monero networks (stagenet)](https://docs.getmonero.org/infrastructure/networks/). You will send to the **escrow/bond subaddresses** returned by the API/UI (from the coordinator wallet); understand that this is a custodial coordinator model for testing.
+
+### 1) Start the stack (real wallet / on-chain mode)
+
+From the repo root:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.stagenet-wallet.yml up --build
+```
+
+Wait until `wallet-init` logs **Coordinator wallet ready.** and the API is listening on `http://127.0.0.1:8000`.
+
+Optional checks:
+
+- API docs: `http://127.0.0.1:8000/docs`
+- Stagenet daemon RPC (host): `http://127.0.0.1:18081`
+- Wallet RPC (host): `http://127.0.0.1:18083`
+
+### 2) Funding watcher (recommended for demos)
+
+The API does not mine blocks; confirmations move when **monerod** syncs and the watcher polls wallet RPC. In a **second terminal**, from the repo root (after `pip install -r requirements-dev.txt` or `requirements.txt`):
+
+**Windows PowerShell:**
+
+```powershell
+$env:ROBOSATS_XMR_USE_FAKE_WALLET="false"
+$env:MONERO_WALLET_RPC_URL="http://127.0.0.1:18083"
+$env:ROBOSATS_XMR_DB_PATH="data/trades.db"
+python -m backend.watcher_main
+```
+
+**cmd.exe:**
+
+```bat
+set ROBOSATS_XMR_USE_FAKE_WALLET=false
+set MONERO_WALLET_RPC_URL=http://127.0.0.1:18083
+set ROBOSATS_XMR_DB_PATH=data/trades.db
+python -m backend.watcher_main
+```
+
+**bash:**
+
+```bash
+export ROBOSATS_XMR_USE_FAKE_WALLET=false
+export MONERO_WALLET_RPC_URL=http://127.0.0.1:18083
+export ROBOSATS_XMR_DB_PATH=data/trades.db
+python -m backend.watcher_main
+```
+
+Use the same `ROBOSATS_XMR_DB_PATH` the API container uses (`./data` on the host maps to `/app/data` in the container).
+
+### 3) Optional: stale-trade sweeper
+
+Same `ROBOSATS_XMR_DB_PATH` as above; no wallet env vars needed.
+
+```powershell
+$env:ROBOSATS_XMR_DB_PATH="data/trades.db"
+python -m backend.sweeper_main
+```
+
+### 4) Frontend + demo “clips” flow
+
+1. Start the UI: `cd frontend`, `npm install`, `npm run dev -- --host 127.0.0.1` (see §2 under [How to Run](#how-to-run)).
+2. Set `VITE_API_BASE_URL=http://127.0.0.1:8000` in `frontend/.env` if needed.
+3. Record short clips in a logical order, for example:
+   - **Stack health:** browser on `/docs` or `GET /health`, plus Docker Desktop showing services running.
+   - **Order book:** list offers, filters, refresh.
+   - **Create offer / take offer:** through to trade detail with escrow + bond addresses.
+   - **On-chain funding:** send stagenet XMR to the shown subaddresses; show watcher logs as confirmations increase until `FUNDED` (default **10** confirmations).
+   - **Settlement:** mark fiat paid → release escrow (and any bond behaviour you want to highlight).
+
+### 5) Fake-wallet stagenet stack (UI only, no coins)
+
+To run the same containers but keep **simulated** funding (good for quick UI captures without a faucet):
+
+```bash
+docker compose up --build
+```
+
+### Public demos
+
+Place the API behind HTTPS or the optional **Tor** service; set `ROBOSATS_XMR_CORS_ORIGINS` so it includes your frontend origin.
 
 ## Bounty Status
 
