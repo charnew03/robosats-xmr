@@ -9,6 +9,8 @@ A clean-slate FastAPI backend for a Monero-native RoboSats-style P2P fiat ↔ XM
 - Phase 3 (bonds + basic hardening) (completed)
 - Phase 4 (Basic Order Book) (completed)
 - **MVP frontend** — order book, create offer, dashboard, trade detail + local chat placeholder (see below) (completed)
+- **Seed-based accounts** — 25-word Monero mnemonic, JWT sessions, no seed stored server-side (see [Authentication and accounts](#authentication-and-accounts))
+- **Optional multisig-style escrow** — `ROBOSATS_XMR_ESCROW_MODE=multisig_2of3` uses a dedicated trade path (simulated in fake wallet; coordinator-assisted on real RPC until full on-chain multisig signing is wired)
 
 No phase is marked complete unless tests and checklists in `docs/TESTING.md` are green.
 
@@ -20,16 +22,19 @@ No phase is marked complete unless tests and checklists in `docs/TESTING.md` are
 - Maker/taker bonds with subaddresses and confirmation counters
 - Risk limits (max open trades per seller) and stale-trade sweeper
 - **Order book:** `POST /offers`, `GET /offers`, `POST /offers/{id}/take` → bonded trade in `FUNDS_PENDING`
+- **Authentication:** `POST /auth/register/init`, `POST /auth/register/confirm`, `POST /auth/login`, `GET /auth/me` (Bearer JWT)
 - Optional **Tor onion service** via Docker (`tor` service + hidden service to API)
 - SQLite persistence, fake-wallet dev mode, real `monero-wallet-rpc` path
 
 **Frontend** (`frontend/` — Vite + React + TypeScript + Tailwind)
 
 - **Order book** (`/`): live `GET /offers`, filters (side, payment, min/max XMR, min/max premium), refresh, take-offer flow with modal
-- **Create offer** (`/create-offer`): maker form → `POST /offers` (sell-XMR listings; buy-side reserved until API extends)
-- **Dashboard** (`/dashboard`): “My active offers” + “Active trades” filtered by navbar **pseudonym**; links to trade detail
-- **Trade detail** (`/trade/:id`): status, amounts, bonds, counterparty avatars; actions (refresh funding, mark fiat paid, release XMR, dispute, collaborative cancel); **trade chat** stored in **browser localStorage only** (MVP placeholder; E2E chat later)
-- **Navigation:** top bar with pseudonym + colored avatar initials, routes via React Router
+- **Create account** (`/register`): server generates a **25-word Monero seed** once; backup checkbox; confirm → JWT + opaque **user id** (hash of seed); seed never stored on server
+- **Log in** (`/login`): paste seed → JWT; same **user id** as maker/taker in API calls
+- **Create offer** (`/create-offer`): maker form → `POST /offers` (sell-XMR listings; buy-side reserved until API extends); requires signed-in account
+- **Dashboard** (`/dashboard`): “My active offers” + “Active trades” filtered by signed-in **account id** (seed-derived)
+- **Trade detail** (`/trade/:id`): status, amounts, bonds, escrow mode (legacy vs multisig), counterparty avatars; actions (refresh funding, mark fiat paid, release XMR, dispute, collaborative cancel); **trade chat** stored in **browser localStorage only** (MVP placeholder; E2E chat later)
+- **Navigation:** top bar with account id (short), Create account / Log in / Log out, routes via React Router
 - Dark theme, toasts, loading states, mobile-friendly layouts
 
 ## How to Run
@@ -82,7 +87,7 @@ The Vite frontend is not exposed as an onion service in this repo; use Tor Brows
 
 - Docker + Docker Compose
 - Python 3.11+ on the host if you run the watcher outside Docker (same as [How to Run](#how-to-run) §1)
-- Stagenet XMR for real funding (no monetary value): e.g. [Rino community stagenet faucet](https://community.rino.io/faucet/stagenet) or search for an active faucet; see [Monero networks (stagenet)](https://docs.getmonero.org/infrastructure/networks/). You will send to the **escrow/bond subaddresses** returned by the API/UI (from the coordinator wallet); understand that this is a custodial coordinator model for testing.
+- Stagenet XMR for real funding (no monetary value): e.g. [Rino community stagenet faucet](https://community.rino.io/faucet/stagenet) or search for an active faucet; see [Monero networks (stagenet)](https://docs.getmonero.org/infrastructure/networks/). You will send to the **escrow/bond subaddresses** returned by the API/UI (from the coordinator wallet); understand that this is a custodial coordinator model for testing. With `ROBOSATS_XMR_ESCROW_MODE=multisig_2of3`, trades use the multisig-oriented path (see [Environment variables](#environment-variables-reference)); on-chain 2-of-3 signing is not fully automated against `wallet-rpc` yet.
 
 ### 1) Start the stack (real wallet / on-chain mode)
 
@@ -154,9 +159,28 @@ docker compose up --build
 
 Place the API behind HTTPS or the optional **Tor** service; set `ROBOSATS_XMR_CORS_ORIGINS` so it includes your frontend origin.
 
+## Authentication and accounts
+
+- **Register:** `POST /auth/register/init` returns `{ mnemonic, setup_token }`. The client must show the mnemonic once and call `POST /auth/register/confirm` with the same mnemonic plus `setup_token` after the user confirms backup. The server stores only a short-lived Argon2id digest for verification, then a row in `users` keyed by **opaque `user_id`** (`SHA256` of standard Monero seed bytes). **Never log or persist the raw mnemonic.**
+- **Login:** `POST /auth/login` with `{ mnemonic }` → JWT. **`GET /auth/me`** with `Authorization: Bearer <token>` returns `{ user_id }`.
+- **Production:** set strong random values (≥32 bytes) for `ROBOSATS_XMR_JWT_SECRET` and `ROBOSATS_XMR_REGISTRATION_SECRET`. Defaults are dev-only.
+- **Trade APIs:** maker/taker ids in JSON are still **trusted from the client** today; JWT proves identity to the UI. Binding `Authorization` to trade actions is a follow-up hardening step.
+
+## Environment variables (reference)
+
+| Variable | Purpose |
+|---|---|
+| `ROBOSATS_XMR_DB_PATH` | SQLite path (default `data/trades.db`) |
+| `ROBOSATS_XMR_USE_FAKE_WALLET` | `true` / `false` |
+| `MONERO_WALLET_RPC_URL` | Wallet RPC when not fake |
+| `ROBOSATS_XMR_CORS_ORIGINS` | Comma-separated origins |
+| `ROBOSATS_XMR_ESCROW_MODE` | `legacy` (default) or `multisig` / `multisig_2of3` / `2of3` for the multisig trade escrow path |
+| `ROBOSATS_XMR_JWT_SECRET` | HMAC key for JWT (required strength in production) |
+| `ROBOSATS_XMR_REGISTRATION_SECRET` | Pepper for pending registration hashes |
+
 ## Bounty Status
 
-**Ready for review** — Monero-native RoboSats-style fork with custodial subaddress escrow, 10-block finality, bonds, order book, settlement/disputes, basic frontend MVP, Docker stagenet stack, and optional Tor hidden service for API access. Further hardening (encrypted chat, full non-custodial path, production ops) can follow as separate milestones.
+**Ready for review** — Monero-native RoboSats-style fork with coordinator subaddress escrow (optional multisig-mode trade path), seed-based accounts + JWT, 10-block finality, bonds, order book, settlement/disputes, basic frontend MVP, Docker stagenet stack, and optional Tor hidden service for API access. Further hardening (encrypted chat, JWT-bound trade actions, full on-chain multisig signing, production ops) can follow as separate milestones.
 
 ## Current Capabilities (summary)
 
@@ -166,11 +190,13 @@ Place the API behind HTTPS or the optional **Tor** service; set `ROBOSATS_XMR_CO
 | Settlement | Fiat marked paid, XMR release, disputes |
 | Bonds | Subaddresses, amounts, returns on cancel/release |
 | Order book | Public offers, take → trade |
-| Frontend | Book, create offer, dashboard, trade detail + MVP chat |
-| Privacy | Dark UI, pseudonyms, optional Tor for API |
+| Auth | 25-word mnemonic registration + login, JWT, opaque user id |
+| Frontend | Book, register/login, create offer, dashboard, trade detail + MVP chat |
+| Privacy | Dark UI, seed-derived account ids, optional Tor for API |
 
 ### Key API Endpoints
 
+- `POST /auth/register/init`, `POST /auth/register/confirm`, `POST /auth/login`, `GET /auth/me`
 - `POST /trades`, `GET /trades`, `GET /trades/{trade_id}`
 - `POST /trades/{trade_id}/assign-deposit`, `refresh-funding`, `seed-confirmations` (fake wallet)
 - `POST /trades/{trade_id}/mark-fiat-paid`, `release-escrow`, `open-dispute`, `cancel`
@@ -186,7 +212,8 @@ Place the API behind HTTPS or the optional **Tor** service; set `ROBOSATS_XMR_CO
 
 | Dimension | Original RoboSats | robosats-xmr |
 |---|---|---|
-| Settlement | Lightning | Monero subaddress escrow |
+| Settlement | Lightning | Monero subaddress escrow (+ optional multisig-mode path) |
+| Accounts | RoboSats identity model | 25-word Monero mnemonic → opaque id + JWT |
 | Finality | Payment semantics | 10 on-chain confirmations |
 | Stack | LN nodes | `monerod` + `monero-wallet-rpc` |
 | Frontend | Full prod UI | MVP Vite app + local chat placeholder |
