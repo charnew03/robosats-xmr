@@ -4,3 +4,4 @@ services:
   api:
     environment:
       ROBOSATS_XMR_USE_FAKE_WALLET: "false"
+      ROBOSATS_XMR_ESCROW_MODE: multisig_2of3

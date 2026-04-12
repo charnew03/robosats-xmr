@@ -10,7 +10,7 @@ A clean-slate FastAPI backend for a Monero-native RoboSats-style P2P fiat ↔ XM
 - Phase 4 (Basic Order Book) (completed)
 - **MVP frontend** — order book, create offer, dashboard, trade detail + local chat placeholder (see below) (completed)
 - **Seed-based accounts** — 25-word Monero mnemonic, JWT sessions, no seed stored server-side (see [Authentication and accounts](#authentication-and-accounts))
-- **Optional multisig-style escrow** — `ROBOSATS_XMR_ESCROW_MODE=multisig_2of3` uses a dedicated trade path (simulated in fake wallet; coordinator-assisted on real RPC until full on-chain multisig signing is wired)
+- **2-of-3 multisig-style trade escrow (default)** — coordinator + buyer + seller model; unset `ROBOSATS_XMR_ESCROW_MODE` or set `multisig_2of3` (simulated in fake wallet; coordinator-assisted on real RPC until full on-chain multisig signing is wired). Set `ROBOSATS_XMR_ESCROW_MODE=legacy` (or `custodial` / `subaddress` / `single`) only if you need the old single-subaddress-per-trade path.
 
 No phase is marked complete unless tests and checklists in `docs/TESTING.md` are green.
 
@@ -87,7 +87,7 @@ The Vite frontend is not exposed as an onion service in this repo; use Tor Brows
 
 - Docker + Docker Compose
 - Python 3.11+ on the host if you run the watcher outside Docker (same as [How to Run](#how-to-run) §1)
-- Stagenet XMR for real funding (no monetary value): e.g. [Rino community stagenet faucet](https://community.rino.io/faucet/stagenet) or search for an active faucet; see [Monero networks (stagenet)](https://docs.getmonero.org/infrastructure/networks/). You will send to the **escrow/bond subaddresses** returned by the API/UI (from the coordinator wallet); understand that this is a custodial coordinator model for testing. With `ROBOSATS_XMR_ESCROW_MODE=multisig_2of3`, trades use the multisig-oriented path (see [Environment variables](#environment-variables-reference)); on-chain 2-of-3 signing is not fully automated against `wallet-rpc` yet.
+- Stagenet XMR for real funding (no monetary value): e.g. [Rino community stagenet faucet](https://community.rino.io/faucet/stagenet) or search for an active faucet; see [Monero networks (stagenet)](https://docs.getmonero.org/infrastructure/networks/). You will send to the **escrow/bond addresses** returned by the API/UI. **By default** trades use the **2-of-3 multisig-style** escrow path (see [Environment variables](#environment-variables-reference)); the coordinator wallet still holds material risk until full on-chain multisig signing is automated against `wallet-rpc`. For the older single-subaddress-per-trade behavior, set `ROBOSATS_XMR_ESCROW_MODE=legacy`.
 
 ### 1) Start the stack (real wallet / on-chain mode)
 
@@ -174,13 +174,13 @@ Place the API behind HTTPS or the optional **Tor** service; set `ROBOSATS_XMR_CO
 | `ROBOSATS_XMR_USE_FAKE_WALLET` | `true` / `false` |
 | `MONERO_WALLET_RPC_URL` | Wallet RPC when not fake |
 | `ROBOSATS_XMR_CORS_ORIGINS` | Comma-separated origins |
-| `ROBOSATS_XMR_ESCROW_MODE` | `legacy` (default) or `multisig` / `multisig_2of3` / `2of3` for the multisig trade escrow path |
+| `ROBOSATS_XMR_ESCROW_MODE` | **Unset = multisig (default).** Or `multisig` / `multisig_2of3` / `2of3`. Use `legacy` / `custodial` / `subaddress` / `single` for the old single coordinator subaddress per trade. |
 | `ROBOSATS_XMR_JWT_SECRET` | HMAC key for JWT (required strength in production) |
 | `ROBOSATS_XMR_REGISTRATION_SECRET` | Pepper for pending registration hashes |
 
 ## Bounty Status
 
-**Ready for review** — Monero-native RoboSats-style fork with coordinator subaddress escrow (optional multisig-mode trade path), seed-based accounts + JWT, 10-block finality, bonds, order book, settlement/disputes, basic frontend MVP, Docker stagenet stack, and optional Tor hidden service for API access. Further hardening (encrypted chat, JWT-bound trade actions, full on-chain multisig signing, production ops) can follow as separate milestones.
+**Ready for review** — Monero-native RoboSats-style fork with **2-of-3 multisig-style trade escrow by default** (legacy single-subaddress opt-out), seed-based accounts + JWT, 10-block finality, bonds, order book, settlement/disputes, basic frontend MVP, Docker stagenet stack, and optional Tor hidden service for API access. Further hardening (encrypted chat, JWT-bound trade actions, full on-chain multisig signing, production ops) can follow as separate milestones.
 
 ## Current Capabilities (summary)
 

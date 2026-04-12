@@ -12,10 +12,19 @@ LEGACY_MODE = "LEGACY_SUBADDRESS"
 
 
 def escrow_mode_from_env() -> str:
-    raw = os.getenv("ROBOSATS_XMR_ESCROW_MODE", "legacy").strip().lower()
+    """
+    Default is 2-of-3 multisig-style trade escrow (buyer + seller + coordinator).
+
+    Set ``ROBOSATS_XMR_ESCROW_MODE`` to ``legacy``, ``custodial``, ``subaddress``, or ``single``
+    to use the older single coordinator subaddress per trade (community criticism: full custodial).
+    """
+    raw = os.getenv("ROBOSATS_XMR_ESCROW_MODE", "").strip().lower()
+    if raw in ("legacy", "custodial", "subaddress", "single"):
+        return LEGACY_MODE
     if raw in ("multisig", "multisig_2of3", "2of3"):
         return MULTISIG_MODE
-    return LEGACY_MODE
+    # Unset or unknown → multisig (preferred product default).
+    return MULTISIG_MODE
 
 
 class MultisigEscrowWallet(Protocol):

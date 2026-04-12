@@ -56,6 +56,8 @@ services:
       - "8000:8000"
     environment:
       ROBOSATS_XMR_DB_PATH: /app/data/trades.db
+      # Default app behavior is multisig-style 2-of-3 trade escrow; set to legacy/custodial/subaddress/single to opt out.
+      ROBOSATS_XMR_ESCROW_MODE: multisig_2of3
       ROBOSATS_XMR_USE_FAKE_WALLET: "true"
       MONERO_WALLET_RPC_URL: http://wallet-rpc:18083
       MONERO_WALLET_RPC_USER: ""

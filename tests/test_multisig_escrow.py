@@ -5,6 +5,28 @@ from fastapi.testclient import TestClient
 from backend.api import create_app
 
 
+def test_escrow_defaults_to_multisig_when_env_unset(tmp_path, monkeypatch) -> None:
+    """This module skips tests/conftest legacy autouse; unset env → product default."""
+    monkeypatch.delenv("ROBOSATS_XMR_ESCROW_MODE", raising=False)
+    client = TestClient(create_app(db_path=str(tmp_path / "default-ms.db"), use_fake_wallet=True))
+    offer = client.post(
+        "/offers",
+        json={
+            "maker_id": "m-def",
+            "amount_xmr": 0.1,
+            "premium_pct": 0,
+            "fiat_currency": "USD",
+            "payment_method": "T",
+        },
+    ).json()
+    take = client.post(
+        f"/offers/{offer['offer_id']}/take",
+        json={"taker_id": "t-def"},
+    ).json()
+    assert take["escrow_mode"] == "MULTISIG_2OF3"
+    assert (take["deposit_address"] or "").startswith("45msig2of3")
+
+
 def test_take_offer_uses_multisig_when_env_set(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("ROBOSATS_XMR_ESCROW_MODE", "multisig_2of3")
     db = str(tmp_path / "ms.db")
