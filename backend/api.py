@@ -4,18 +4,33 @@ from datetime import datetime
 import logging
 import os
 from pathlib import Path
+import sqlite3
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from backend.auth_repository import AuthRepository
 from backend.bond_service import assign_trade_bonds
 from backend.fake_wallet import FakeWalletFundingRPC
 from backend.funding_service import assign_trade_deposit, refresh_trade_funding
 from backend.monero_rpc import MoneroWalletRPC
+from backend.multisig_escrow import MULTISIG_MODE
 from backend.repository import Offer, SQLiteTradeRepository, TradeRepository
+from backend.seed_auth import (
+    decode_access_token,
+    derive_user_id,
+    generate_mnemonic_phrase,
+    hash_mnemonic_for_pending,
+    issue_access_token,
+    mnemonic_to_seed_hex,
+    normalize_mnemonic,
+    pepper_for_pending,
+    registration_server_secret,
+    verify_mnemonic_pending,
+)
 from backend.risk_limits import RiskLimits, enforce_seller_open_trade_limit
 from backend.rate_limit import RateLimiter
 from backend.trade_engine import Trade, TradeState
@@ -103,6 +118,8 @@ class TradeResponse(BaseModel):
     deposit_subaddress_index: int | None = None
     maker_bond_subaddress_index: int | None = None
     taker_bond_subaddress_index: int | None = None
+    escrow_mode: str = "LEGACY_SUBADDRESS"
+    multisig_info: str | None = None
 
 
 class OfferResponse(BaseModel):
@@ -124,6 +141,30 @@ class OfferResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     db_path: str
+
+
+class RegisterInitResponse(BaseModel):
+    mnemonic: str
+    setup_token: str
+
+
+class RegisterConfirmRequest(BaseModel):
+    setup_token: str = Field(min_length=10)
+    mnemonic: str = Field(min_length=10)
+
+
+class LoginRequest(BaseModel):
+    mnemonic: str = Field(min_length=10)
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user_id: str
+
+
+class MeResponse(BaseModel):
+    user_id: str
 
 
 def to_trade_response(trade: Trade) -> TradeResponse:
@@ -152,6 +193,8 @@ def to_trade_response(trade: Trade) -> TradeResponse:
         deposit_subaddress_index=trade.deposit_subaddress_index,
         maker_bond_subaddress_index=trade.maker_bond_subaddress_index,
         taker_bond_subaddress_index=trade.taker_bond_subaddress_index,
+        escrow_mode=trade.escrow_mode,
+        multisig_info=trade.multisig_info,
     )
 
 
@@ -195,6 +238,7 @@ def create_app(
     effective_db_path = db_path or os.getenv("ROBOSATS_XMR_DB_PATH", "data/trades.db")
     Path(effective_db_path).parent.mkdir(parents=True, exist_ok=True)
     trade_repository: TradeRepository = SQLiteTradeRepository(db_path=effective_db_path)
+    auth_repository = AuthRepository(db_path=effective_db_path)
 
     rate_limiter = RateLimiter(
         max_requests=int(os.getenv("ROBOSATS_XMR_RL_MAX_REQUESTS", "60")),
@@ -230,6 +274,68 @@ def create_app(
                 status_code=429, content={"detail": "rate limit exceeded"}
             )
         return await call_next(request)
+
+    @app.post("/auth/register/init", response_model=RegisterInitResponse)
+    def auth_register_init() -> RegisterInitResponse:
+        auth_repository.delete_expired_pending()
+        mnemonic = generate_mnemonic_phrase()
+        setup_token = auth_repository.new_setup_token()
+        pepper = pepper_for_pending(setup_token, registration_server_secret())
+        passhash = hash_mnemonic_for_pending(normalize_mnemonic(mnemonic), pepper)
+        auth_repository.create_pending(setup_token=setup_token, passhash=passhash)
+        return RegisterInitResponse(mnemonic=mnemonic, setup_token=setup_token)
+
+    @app.post("/auth/register/confirm", response_model=TokenResponse)
+    def auth_register_confirm(payload: RegisterConfirmRequest) -> TokenResponse:
+        auth_repository.delete_expired_pending()
+        pending = auth_repository.get_pending(payload.setup_token)
+        if pending is None:
+            raise HTTPException(status_code=400, detail="invalid or expired setup token")
+        if pending.expires_at < datetime.utcnow():
+            auth_repository.delete_pending(payload.setup_token)
+            raise HTTPException(status_code=400, detail="setup token expired")
+        normalized = normalize_mnemonic(payload.mnemonic)
+        pepper = pepper_for_pending(payload.setup_token, registration_server_secret())
+        if not verify_mnemonic_pending(normalized, pending.passhash, pepper):
+            raise HTTPException(status_code=400, detail="mnemonic does not match this setup session")
+        try:
+            seed_hex = mnemonic_to_seed_hex(normalized)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        user_id = derive_user_id(seed_hex)
+        if auth_repository.user_exists(user_id):
+            auth_repository.delete_pending(payload.setup_token)
+            raise HTTPException(status_code=409, detail="account already exists for this seed")
+        try:
+            auth_repository.create_user(user_id)
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=409, detail="account already exists") from None
+        auth_repository.delete_pending(payload.setup_token)
+        token = issue_access_token(user_id=user_id)
+        return TokenResponse(access_token=token, user_id=user_id)
+
+    @app.post("/auth/login", response_model=TokenResponse)
+    def auth_login(payload: LoginRequest) -> TokenResponse:
+        try:
+            normalized = normalize_mnemonic(payload.mnemonic)
+            seed_hex = mnemonic_to_seed_hex(normalized)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        user_id = derive_user_id(seed_hex)
+        if not auth_repository.user_exists(user_id):
+            raise HTTPException(status_code=401, detail="unknown account")
+        token = issue_access_token(user_id=user_id)
+        return TokenResponse(access_token=token, user_id=user_id)
+
+    @app.get("/auth/me", response_model=MeResponse)
+    def auth_me(authorization: str | None = Header(default=None)) -> MeResponse:
+        if not authorization or not authorization.lower().startswith("bearer "):
+            raise HTTPException(status_code=401, detail="missing bearer token")
+        raw = authorization.split(" ", 1)[1].strip()
+        user_id = decode_access_token(raw)
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="invalid or expired token")
+        return MeResponse(user_id=user_id)
 
     @app.post("/trades", response_model=TradeResponse)
     def create_trade(payload: CreateTradeRequest) -> TradeResponse:
@@ -521,14 +627,23 @@ def create_app(
             )
         try:
             _ensure_bonds_accounted_for(trade)
-            # Wallet sends the exact trade notional toward the buyer; fake wallet simulates
-            # from the deposit subaddress; real RPC prefers subaddr_indices when known.
-            txid = release_escrow_to_buyer(
-                wallet_rpc,
-                trade.deposit_address,
-                payload.buyer_payout_address,
-                trade.amount_xmr,
-            )
+            ms_release = getattr(wallet_rpc, "release_multisig_escrow_to_buyer", None)
+            if trade.escrow_mode == MULTISIG_MODE and callable(ms_release):
+                txid = ms_release(
+                    trade.deposit_address,
+                    payload.buyer_payout_address,
+                    trade.amount_xmr,
+                    trade.trade_id,
+                )
+            else:
+                # Wallet sends the exact trade notional toward the buyer; fake wallet simulates
+                # from the deposit subaddress; real RPC prefers subaddr_indices when known.
+                txid = release_escrow_to_buyer(
+                    wallet_rpc,
+                    trade.deposit_address,
+                    payload.buyer_payout_address,
+                    trade.amount_xmr,
+                )
             trade.set_release(payload.buyer_payout_address, txid)
             bond_returns: list[str] = []
             if payload.maker_return_address and trade.maker_bond_address:

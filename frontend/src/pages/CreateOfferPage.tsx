@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { createOffer } from "../api";
 import { Spinner } from "../components/Spinner";
 import { useProfile } from "../context/ProfileContext";
@@ -10,7 +10,7 @@ type ListingSide = "sell_xmr" | "buy_xmr";
 
 export function CreateOfferPage() {
   const navigate = useNavigate();
-  const { pseudonym, setPseudonym } = useProfile();
+  const { userId, isAuthenticated } = useProfile();
   const { showToast } = useToast();
   const [side, setSide] = useState<ListingSide>("sell_xmr");
   const [amountXmr, setAmountXmr] = useState("0.5");
@@ -30,9 +30,9 @@ export function CreateOfferPage() {
       showToast("error", "Buy-side maker offers are not in the API yet. Choose Sell XMR.");
       return;
     }
-    const makerId = pseudonym.trim();
+    const makerId = userId.trim();
     if (!makerId) {
-      showToast("error", "Set your pseudonym in the header (maker id).");
+      showToast("error", "Create an account or log in with your seed phrase first.");
       return;
     }
     const amount = Number(amountXmr);
@@ -97,9 +97,23 @@ export function CreateOfferPage() {
     <main className="mx-auto w-full max-w-xl px-4 py-8 sm:px-6 lg:px-8">
       <h1 className="text-2xl font-semibold">Create offer</h1>
       <p className="mt-2 text-sm text-xmr-muted">
-        You are the <strong className="text-xmr-text">maker</strong>. Use the same pseudonym as in the top bar, or
-        edit it below.
+        You are the <strong className="text-xmr-text">maker</strong>. Your maker id is your signed-in account id
+        (derived from your seed phrase).
       </p>
+
+      {!isAuthenticated && (
+        <p className="mt-4 rounded-md border border-amber-900/50 bg-amber-950/20 p-3 text-sm text-amber-100">
+          You need an account to publish.{" "}
+          <Link className="font-semibold text-xmr-accent underline" to="/register">
+            Create account
+          </Link>{" "}
+          or{" "}
+          <Link className="font-semibold text-xmr-accent underline" to="/login">
+            log in
+          </Link>
+          .
+        </p>
+      )}
 
       <form onSubmit={handleSubmit} className="mt-6 space-y-4">
         <label className="block text-sm">
@@ -121,15 +135,10 @@ export function CreateOfferPage() {
           </p>
         )}
 
-        <label className="block text-sm">
-          <span className="mb-1 block text-xmr-muted">Maker pseudonym</span>
-          <input
-            value={pseudonym}
-            onChange={(e) => setPseudonym(e.target.value)}
-            className="w-full rounded-md border border-xmr-border bg-black/30 px-3 py-2 font-mono text-sm"
-            placeholder="same as navbar"
-          />
-        </label>
+        <div className="rounded-md border border-xmr-border bg-black/20 px-3 py-2 text-sm">
+          <span className="text-xmr-muted">Maker id </span>
+          <span className="font-mono text-xs text-xmr-text">{userId || "— (not signed in)"}</span>
+        </div>
 
         <label className="block text-sm">
           <span className="mb-1 block text-xmr-muted">Amount (XMR)</span>
@@ -239,7 +248,7 @@ export function CreateOfferPage() {
 
         <button
           type="submit"
-          disabled={submitting || side === "buy_xmr"}
+          disabled={submitting || side === "buy_xmr" || !isAuthenticated}
           className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-xmr-accent py-3 text-sm font-semibold text-black hover:bg-xmr-accentSoft disabled:opacity-40 sm:w-auto sm:px-8"
         >
           {submitting ? <Spinner className="h-4 w-4 border-black border-t-transparent" /> : null}

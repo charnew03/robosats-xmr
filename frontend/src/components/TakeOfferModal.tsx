@@ -12,14 +12,14 @@ type Props = {
 };
 
 export function TakeOfferModal({ offer, onClose, onSuccess, onError }: Props) {
-  const { pseudonym } = useProfile();
+  const { userId } = useProfile();
   const [takerId, setTakerId] = useState("");
   const [confirmations, setConfirmations] = useState("10");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (offer && pseudonym.trim()) setTakerId(pseudonym.trim());
-  }, [offer?.offer_id, pseudonym]);
+    if (offer && userId.trim()) setTakerId(userId.trim());
+  }, [offer?.offer_id, userId]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -37,7 +37,7 @@ export function TakeOfferModal({ offer, onClose, onSuccess, onError }: Props) {
     e.preventDefault();
     const tid = takerId.trim();
     if (!tid) {
-      onError("Enter your taker id (pseudonym).");
+      onError("Enter your taker id (sign in to pre-fill your account id).");
       return;
     }
     const rc = parseInt(confirmations, 10);
@@ -79,7 +79,7 @@ export function TakeOfferModal({ offer, onClose, onSuccess, onError }: Props) {
             Take offer
           </h2>
           <p className="mt-1 text-xs text-xmr-muted">
-            You will fund escrow + bonds as taker. Use a pseudonym, not real name.
+            You will fund escrow + bonds as taker. Use your account id (from seed login), not a real name.
           </p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4 p-4">

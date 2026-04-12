@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
+
 import httpx
 
 from backend.wallet_adapter import TransferActivity
@@ -42,6 +44,29 @@ class MoneroWalletRPC:
     def is_synced(self) -> bool:
         result = self._call("get_height")
         return bool(result.get("height", 0) > 0)
+
+    def allocate_multisig_trade_escrow(
+        self, trade_id: str, seller_id: str, buyer_id: str
+    ) -> tuple[str, str]:
+        """
+        Allocate a dedicated subaddress for trade escrow when multisig mode is enabled.
+
+        Full on-chain 2-of-3 requires exchanging multisig infos via `prepare_multisig` /
+        `make_multisig` / `finalize_multisig` across three wallets; that handshake is not
+        automated here. The coordinator wallet still receives funds to this subaddress;
+        settlement uses the multisig-aware release path which should be upgraded to
+        `sign_transfer` / `submit_multisig` once peer keys are integrated.
+        """
+        address = self.generate_subaddress(f"{trade_id}:multisig2of3")
+        meta = {
+            "threshold": 2,
+            "total": 3,
+            "trade_id": trade_id,
+            "seller_id_prefix": seller_id[:24],
+            "buyer_id_prefix": (buyer_id or "")[:24],
+            "onchain_model": "coordinator_subaddress_pending_full_multisig",
+        }
+        return address, json.dumps(meta, separators=(",", ":"))
 
     def generate_subaddress(self, trade_id: str) -> str:
         result = self._call(
@@ -160,6 +185,20 @@ class MoneroWalletRPC:
         if not tx_hash:
             raise RuntimeError("wallet rpc did not return tx hash")
         return str(tx_hash)
+
+    def release_multisig_escrow_to_buyer(
+        self,
+        deposit_subaddress: str,
+        buyer_address: str,
+        amount_xmr: float,
+        trade_id: str,
+    ) -> str:
+        _ = trade_id
+        return self.release_escrow_to_buyer(
+            deposit_subaddress=deposit_subaddress,
+            buyer_address=buyer_address,
+            amount_xmr=amount_xmr,
+        )
 
     def release_bond(
         self, bond_subaddress: str, return_address: str, amount_xmr: float

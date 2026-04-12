@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from backend.multisig_escrow import assign_multisig_deposit_if_enabled
 from backend.trade_engine import Trade
 
 
@@ -14,6 +15,9 @@ class WalletFundingRPC(Protocol):
 
 
 def assign_trade_deposit(trade: Trade, wallet_rpc: WalletFundingRPC) -> str:
+    if assign_multisig_deposit_if_enabled(trade, wallet_rpc):
+        assert trade.deposit_address is not None
+        return trade.deposit_address
     address = wallet_rpc.generate_subaddress(trade.trade_id)
     trade.assign_deposit_address(address)
     return address

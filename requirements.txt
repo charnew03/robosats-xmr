@@ -1,3 +1,6 @@
 fastapi
 httpx
 uvicorn
+monero
+argon2-cffi
+PyJWT

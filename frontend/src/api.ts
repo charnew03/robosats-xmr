@@ -53,7 +53,71 @@ export type Trade = {
   deposit_subaddress_index: number | null;
   maker_bond_subaddress_index: number | null;
   taker_bond_subaddress_index: number | null;
+  escrow_mode?: string;
+  multisig_info?: string | null;
 };
+
+export type RegisterInitResponse = {
+  mnemonic: string;
+  setup_token: string;
+};
+
+export type TokenResponse = {
+  access_token: string;
+  token_type: string;
+  user_id: string;
+};
+
+export async function registerInit(signal?: AbortSignal): Promise<RegisterInitResponse> {
+  const response = await fetch(`${API_BASE_URL}/auth/register/init`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    signal,
+  });
+  if (!response.ok) throw new Error(await parseApiError(response));
+  return (await response.json()) as RegisterInitResponse;
+}
+
+export async function registerConfirm(
+  body: { setup_token: string; mnemonic: string },
+  signal?: AbortSignal,
+): Promise<TokenResponse> {
+  const response = await fetch(`${API_BASE_URL}/auth/register/confirm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!response.ok) throw new Error(await parseApiError(response));
+  return (await response.json()) as TokenResponse;
+}
+
+export async function loginWithSeed(
+  body: { mnemonic: string },
+  signal?: AbortSignal,
+): Promise<TokenResponse> {
+  const response = await fetch(`${API_BASE_URL}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!response.ok) throw new Error(await parseApiError(response));
+  return (await response.json()) as TokenResponse;
+}
+
+export async function getMe(accessToken: string, signal?: AbortSignal): Promise<{ user_id: string }> {
+  const response = await fetch(`${API_BASE_URL}/auth/me`, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    signal,
+  });
+  if (!response.ok) throw new Error(await parseApiError(response));
+  return (await response.json()) as { user_id: string };
+}
 
 export type CreateOfferBody = {
   maker_id: string;

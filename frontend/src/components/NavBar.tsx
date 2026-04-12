@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { useProfile } from "../context/ProfileContext";
+import { shortId } from "../lib/format";
 import { Avatar } from "./Avatar";
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -8,7 +9,7 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
   }`;
 
 export function NavBar() {
-  const { pseudonym, setPseudonym } = useProfile();
+  const { userId, isAuthenticated, logout } = useProfile();
 
   return (
     <header className="sticky top-0 z-40 border-b border-xmr-border bg-xmr-bg/95 backdrop-blur-sm">
@@ -34,17 +35,37 @@ export function NavBar() {
           </NavLink>
         </nav>
 
-        <div className="flex w-full min-w-[200px] flex-1 items-center gap-2 sm:w-auto sm:flex-initial sm:justify-end">
-          <Avatar pseudonym={pseudonym || "?"} size="sm" />
-          <input
-            type="text"
-            value={pseudonym}
-            onChange={(e) => setPseudonym(e.target.value)}
-            placeholder="Your pseudonym"
-            className="min-w-0 flex-1 rounded-md border border-xmr-border bg-black/30 px-2 py-1.5 font-mono text-xs sm:max-w-[200px]"
-            autoComplete="off"
-            spellCheck={false}
-          />
+        <div className="flex w-full min-w-[200px] flex-1 flex-wrap items-center justify-end gap-2 sm:w-auto sm:flex-initial">
+          {isAuthenticated && userId ? (
+            <>
+              <Avatar pseudonym={userId} size="sm" />
+              <span className="font-mono text-xs text-xmr-muted" title={userId}>
+                {shortId(userId, 8, 6)}
+              </span>
+              <button
+                type="button"
+                onClick={() => logout()}
+                className="rounded-md border border-xmr-border px-2 py-1 text-xs hover:bg-white/5"
+              >
+                Log out
+              </button>
+            </>
+          ) : (
+            <>
+              <NavLink
+                to="/login"
+                className="rounded-md border border-xmr-border px-3 py-1.5 text-xs hover:bg-white/5"
+              >
+                Log in
+              </NavLink>
+              <NavLink
+                to="/register"
+                className="rounded-md bg-xmr-accent px-3 py-1.5 text-xs font-semibold text-black hover:bg-xmr-accentSoft"
+              >
+                Create account
+              </NavLink>
+            </>
+          )}
         </div>
       </div>
     </header>

@@ -79,6 +79,9 @@ class Trade:
     taker_bond_subaddress_index: int | None = None
     maker_bond_confirmations: int = 0
     taker_bond_confirmations: int = 0
+    # Escrow: legacy single-party coordinator subaddress vs simulated 2-of-3 multisig.
+    escrow_mode: str = "LEGACY_SUBADDRESS"
+    multisig_info: str | None = None
 
     def transition(self, target_state: TradeState, reason: str) -> TradeEvent:
         if target_state not in ALLOWED_TRANSITIONS[self.state]:
@@ -93,7 +96,13 @@ class Trade:
             self.funded_at = self.updated_at
         return event
 
-    def assign_deposit_address(self, address: str) -> None:
+    def assign_deposit_address(
+        self,
+        address: str,
+        *,
+        escrow_mode: str = "LEGACY_SUBADDRESS",
+        multisig_info: str | None = None,
+    ) -> None:
         if not address:
             raise ValueError("address cannot be empty")
         if self.deposit_address is not None:
@@ -102,6 +111,8 @@ class Trade:
             raise ValueError("deposit address can only be assigned from CREATED state")
 
         self.deposit_address = address
+        self.escrow_mode = escrow_mode
+        self.multisig_info = multisig_info
         self.transition(TradeState.FUNDS_PENDING, reason="deposit address assigned")
 
     def cancel(self, reason: str) -> TradeEvent:

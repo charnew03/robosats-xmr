@@ -61,7 +61,7 @@ export function DashboardPage() {
         <div>
           <h1 className="text-2xl font-semibold">Dashboard</h1>
           <p className="mt-1 text-sm text-xmr-muted">
-            Filtered by your pseudonym. Set it in the nav if this list is empty.
+            Filtered by your account id. Sign in from the header if this list is empty.
           </p>
         </div>
         <button
@@ -77,7 +77,7 @@ export function DashboardPage() {
 
       {!pid && (
         <p className="mb-6 rounded-lg border border-amber-900/50 bg-amber-950/20 p-4 text-sm text-amber-100">
-          Enter a <strong>pseudonym</strong> in the header to see your offers and trades.
+          <strong>Log in</strong> with your seed phrase in the header to see your offers and trades.
         </p>
       )}
 
@@ -93,7 +93,7 @@ export function DashboardPage() {
           Only <strong>active</strong> offers are returned by the API. Taken offers move to trades.
         </p>
         {myOffers.length === 0 ? (
-          <p className="text-sm text-xmr-muted">No active offers for this pseudonym.</p>
+          <p className="text-sm text-xmr-muted">No active offers for this account.</p>
         ) : (
           <ul className="space-y-2">
             {myOffers.map((o) => (
@@ -126,7 +126,7 @@ export function DashboardPage() {
       <section>
         <h2 className="mb-3 text-lg font-medium">Active trades</h2>
         {activeTrades.length === 0 ? (
-          <p className="text-sm text-xmr-muted">No active trades for this pseudonym.</p>
+          <p className="text-sm text-xmr-muted">No active trades for this account.</p>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-xmr-border">
             <table className="w-full min-w-[600px] text-left text-sm">

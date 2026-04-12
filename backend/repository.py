@@ -39,6 +39,8 @@ def _trade_from_row(row: tuple) -> Trade:
         deposit_subaddress_index=row[23],
         maker_bond_subaddress_index=row[24],
         taker_bond_subaddress_index=row[25],
+        escrow_mode=row[26] if len(row) > 26 and row[26] is not None else "LEGACY_SUBADDRESS",
+        multisig_info=row[27] if len(row) > 27 else None,
     )
 
 
@@ -158,6 +160,8 @@ class SQLiteTradeRepository:
                     deposit_subaddress_index INTEGER,
                     maker_bond_subaddress_index INTEGER,
                     taker_bond_subaddress_index INTEGER,
+                    escrow_mode TEXT NOT NULL DEFAULT 'LEGACY_SUBADDRESS',
+                    multisig_info TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
@@ -214,6 +218,8 @@ class SQLiteTradeRepository:
                 "deposit_subaddress_index": "INTEGER",
                 "maker_bond_subaddress_index": "INTEGER",
                 "taker_bond_subaddress_index": "INTEGER",
+                "escrow_mode": "TEXT",
+                "multisig_info": "TEXT",
             }
             for col, col_type in wanted_cols.items():
                 if col not in existing_cols:
@@ -242,8 +248,9 @@ class SQLiteTradeRepository:
                     maker_bond_address, taker_bond_address,
                     maker_bond_amount, taker_bond_amount,
                     maker_bond_confirmations, taker_bond_confirmations,
-                    deposit_subaddress_index, maker_bond_subaddress_index, taker_bond_subaddress_index
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    deposit_subaddress_index, maker_bond_subaddress_index, taker_bond_subaddress_index,
+                    escrow_mode, multisig_info
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(trade_id) DO UPDATE SET
                     state=excluded.state,
                     amount_xmr=excluded.amount_xmr,
@@ -269,7 +276,9 @@ class SQLiteTradeRepository:
                     taker_bond_confirmations=excluded.taker_bond_confirmations,
                     deposit_subaddress_index=excluded.deposit_subaddress_index,
                     maker_bond_subaddress_index=excluded.maker_bond_subaddress_index,
-                    taker_bond_subaddress_index=excluded.taker_bond_subaddress_index
+                    taker_bond_subaddress_index=excluded.taker_bond_subaddress_index,
+                    escrow_mode=excluded.escrow_mode,
+                    multisig_info=excluded.multisig_info
                 """,
                 (
                     trade.trade_id,
@@ -298,6 +307,8 @@ class SQLiteTradeRepository:
                     trade.deposit_subaddress_index,
                     trade.maker_bond_subaddress_index,
                     trade.taker_bond_subaddress_index,
+                    trade.escrow_mode,
+                    trade.multisig_info,
                 ),
             )
         return trade
@@ -315,7 +326,8 @@ class SQLiteTradeRepository:
                     maker_bond_address, taker_bond_address,
                     maker_bond_amount, taker_bond_amount,
                     maker_bond_confirmations, taker_bond_confirmations,
-                    deposit_subaddress_index, maker_bond_subaddress_index, taker_bond_subaddress_index
+                    deposit_subaddress_index, maker_bond_subaddress_index, taker_bond_subaddress_index,
+                    escrow_mode, multisig_info
                 FROM trades
                 WHERE trade_id = ?
                 """,
@@ -340,7 +352,8 @@ class SQLiteTradeRepository:
                     maker_bond_address, taker_bond_address,
                     maker_bond_amount, taker_bond_amount,
                     maker_bond_confirmations, taker_bond_confirmations,
-                    deposit_subaddress_index, maker_bond_subaddress_index, taker_bond_subaddress_index
+                    deposit_subaddress_index, maker_bond_subaddress_index, taker_bond_subaddress_index,
+                    escrow_mode, multisig_info
                 FROM trades
                 """
             ).fetchall()

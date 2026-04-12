@@ -186,6 +186,14 @@ export function TradeDetailPage() {
             <li className="break-all text-xs text-xmr-muted">
               Deposit: {trade.deposit_address ?? "—"}
             </li>
+            <li className="text-xs text-xmr-muted">
+              Escrow mode:{" "}
+              <span className="font-medium text-xmr-text">
+                {trade.escrow_mode === "MULTISIG_2OF3"
+                  ? "2-of-3 multisig (simulated in dev / coordinator-assisted on RPC)"
+                  : (trade.escrow_mode ?? "LEGACY_SUBADDRESS")}
+              </span>
+            </li>
           </ul>
         </section>
       </div>
@@ -279,7 +287,7 @@ export function TradeDetailPage() {
           <input
             value={chatInput}
             onChange={(e) => setChatInput(e.target.value)}
-            placeholder={pseudonym.trim() ? "Message…" : "Set pseudonym in nav first"}
+            placeholder={pseudonym.trim() ? "Message…" : "Sign in (nav) to chat with your account id"}
             disabled={!pseudonym.trim()}
             className="min-w-0 flex-1 rounded-md border border-xmr-border bg-black/30 px-3 py-2 text-sm"
           />
@@ -424,7 +432,7 @@ export function TradeDetailPage() {
             role="presentation"
           >
             <h3 className="font-medium">Collaborative cancel</h3>
-            <p className="mt-2 text-xs text-xmr-muted">Uses your navbar pseudonym as actor_id.</p>
+            <p className="mt-2 text-xs text-xmr-muted">Uses your signed-in account id as actor_id.</p>
             <textarea
               value={cancelReason}
               onChange={(e) => setCancelReason(e.target.value)}

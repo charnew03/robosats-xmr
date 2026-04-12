@@ -128,7 +128,7 @@ export function OrderBookPage() {
             shape.
           </p>
           <p className="mt-3 max-w-xl rounded-md border border-xmr-border bg-xmr-panel px-3 py-2 text-sm text-xmr-accentSoft">
-            <strong className="text-xmr-text">Take offer</strong> opens a short form (taker pseudonym). Escrow + bonds
+            <strong className="text-xmr-text">Take offer</strong> opens a short form (taker account id). Escrow + bonds
             are allocated on the server.
           </p>
         </div>
