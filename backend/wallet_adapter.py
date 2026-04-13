@@ -11,7 +11,15 @@ class TransferActivity:
 
 
 class EscrowReleaseWallet(Protocol):
-    """Wallet capable of sending the trade escrow amount toward the buyer payout."""
+    """
+    Wallet capable of sending the trade escrow amount toward the buyer payout.
+
+    Multisig (2-of-3) trades use optional helpers on the concrete wallet implementation:
+    ``prepare_multisig_escrow_unsigned`` (Monero: ``transfer`` + ``do_not_relay``),
+    ``submit_multisig_release`` (Monero: ``submit_multisig``), and bond allocation via
+    ``allocate_multisig_bond`` — see ``backend/multisig_release.py`` and API routes under
+    ``/trades/{id}/release-escrow/``.
+    """
 
     def release_escrow_to_buyer(
         self, deposit_subaddress: str, buyer_address: str, amount_xmr: float

@@ -118,6 +118,17 @@ def test_health_endpoint_returns_ok(client: TestClient) -> None:
     assert payload["db_path"]
 
 
+def test_status_endpoint_reports_wallet_mode(client: TestClient) -> None:
+    response = client.get("/status")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["wallet_mode"] == "fake"
+    assert payload["default_multisig_product"] is False
+    assert payload["wallet_rpc_reachable"] is True
+    assert payload["multisig_release_rpc_ready"] is False
+
+
 def test_fiat_paid_and_release_flow(client: TestClient) -> None:
     create_response = client.post(
         "/trades",

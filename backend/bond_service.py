@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from backend.multisig_escrow import assign_multisig_bonds_if_enabled
 from backend.trade_engine import Trade
 
 
@@ -19,6 +20,8 @@ def assign_trade_bonds(trade: Trade, wallet_rpc: BondSubaddressWallet) -> None:
     set on trade creation; addresses are generated once and stored idempotently.
     """
     if trade.maker_bond_address is not None:
+        return
+    if assign_multisig_bonds_if_enabled(trade, wallet_rpc):
         return
     # Labels are unique per trade so wallet RPC / fake wallet produce distinct addresses.
     trade.maker_bond_address = wallet_rpc.generate_subaddress(

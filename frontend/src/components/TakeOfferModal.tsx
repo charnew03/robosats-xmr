@@ -82,7 +82,7 @@ export function TakeOfferModal({ offer, onClose, onSuccess, onError }: Props) {
             You will fund escrow + bonds as taker. Use your account id (from seed login), not a real name.
           </p>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-4 p-4">
+        <form onSubmit={handleSubmit} className="space-y-4 p-4" aria-busy={submitting}>
           <div className="rounded-md border border-xmr-border bg-black/20 p-3 text-sm">
             <p className="text-xmr-muted">Amount</p>
             <p className="font-mono text-base">

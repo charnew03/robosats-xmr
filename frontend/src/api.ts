@@ -55,6 +55,8 @@ export type Trade = {
   taker_bond_subaddress_index: number | null;
   escrow_mode?: string;
   multisig_info?: string | null;
+  multisig_release_status?: string | null;
+  multisig_pending_tx_data_hex?: string | null;
 };
 
 export type RegisterInitResponse = {
@@ -208,6 +210,14 @@ export type ReleaseEscrowBody = {
   taker_return_address?: string | null;
 };
 
+export type MultisigPrepareResponse = {
+  trade: Trade;
+  multisig_status: string;
+  tx_data_hex: string | null;
+};
+
+export type MultisigSignResponse = MultisigPrepareResponse;
+
 export async function releaseEscrow(
   tradeId: string,
   body: ReleaseEscrowBody,
@@ -221,6 +231,51 @@ export async function releaseEscrow(
       body: JSON.stringify(body),
       signal,
     },
+  );
+  if (!response.ok) throw new Error(await parseApiError(response));
+  return (await response.json()) as Trade;
+}
+
+export async function prepareMultisigRelease(
+  tradeId: string,
+  body: ReleaseEscrowBody,
+  signal?: AbortSignal,
+): Promise<MultisigPrepareResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/trades/${encodeURIComponent(tradeId)}/release-escrow/prepare`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    },
+  );
+  if (!response.ok) throw new Error(await parseApiError(response));
+  return (await response.json()) as MultisigPrepareResponse;
+}
+
+export async function signMultisigRelease(
+  tradeId: string,
+  body: { party: "buyer" | "seller"; tx_data_hex?: string | null },
+  signal?: AbortSignal,
+): Promise<MultisigSignResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/trades/${encodeURIComponent(tradeId)}/release-escrow/sign`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    },
+  );
+  if (!response.ok) throw new Error(await parseApiError(response));
+  return (await response.json()) as MultisigSignResponse;
+}
+
+export async function submitMultisigRelease(tradeId: string, signal?: AbortSignal): Promise<Trade> {
+  const response = await fetch(
+    `${API_BASE_URL}/trades/${encodeURIComponent(tradeId)}/release-escrow/submit`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, signal },
   );
   if (!response.ok) throw new Error(await parseApiError(response));
   return (await response.json()) as Trade;

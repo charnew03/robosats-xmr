@@ -11,6 +11,12 @@ class FakeWalletFundingRPC:
         self.received_xmr_by_address: dict[str, float] = {}
         self.subaddress_index_by_address: dict[str, int] = {}
 
+    def get_version(self) -> str:
+        return "fake-wallet"
+
+    def is_synced(self) -> bool:
+        return True
+
     def generate_subaddress(self, trade_id: str) -> str:
         next_index = len(self.confirmations_by_address) + 1
         address = f"48xmr{trade_id[:8]}{next_index}"
@@ -18,6 +24,27 @@ class FakeWalletFundingRPC:
         self.received_xmr_by_address.setdefault(address, 0.0)
         self.subaddress_index_by_address.setdefault(address, next_index)
         return address
+
+    def allocate_multisig_bond(self, trade_id: str, role: str) -> tuple[str, str]:
+        """
+        Simulated 2-of-3 bond receive address (maker/taker); funds are tracked like escrow.
+        """
+        next_index = len(self.confirmations_by_address) + 1
+        safe_role = (role or "x")[:12]
+        address = f"45msig2of3bond{safe_role}{trade_id[:6]}{next_index}"
+        self.confirmations_by_address.setdefault(address, 0)
+        self.received_xmr_by_address.setdefault(address, 0.0)
+        self.subaddress_index_by_address.setdefault(address, next_index)
+        info = {
+            "threshold": 2,
+            "total": 3,
+            "parties": ["seller", "buyer", "coordinator"],
+            "role": safe_role,
+            "trade_id": trade_id,
+            "kind": "bond",
+            "simulated": True,
+        }
+        return address, json.dumps(info, separators=(",", ":"))
 
     def allocate_multisig_trade_escrow(
         self, trade_id: str, seller_id: str, buyer_id: str
@@ -81,13 +108,35 @@ class FakeWalletFundingRPC:
         amount_xmr: float,
         trade_id: str,
     ) -> str:
-        """Simulate 2-of-3 multisig settlement (coordinator co-signs with one peer key)."""
+        """Deprecated one-shot multisig simulation; use prepare/sign/submit API flow."""
         if not deposit_subaddress or not buyer_address or amount_xmr <= 0 or not trade_id:
             raise ValueError("invalid multisig escrow release parameters")
         if deposit_subaddress not in self.confirmations_by_address:
             raise ValueError("unknown multisig deposit address for fake wallet")
         return (
             f"fake-msig2of3-from-{deposit_subaddress[:16]}-"
+            f"to-{buyer_address[:12]}-amt-{amount_xmr}-tid-{trade_id[:8]}"
+        )
+
+    def submit_multisig_release(
+        self,
+        deposit_subaddress: str,
+        final_tx_data_hex: str,
+        trade_id: str,
+        buyer_address: str,
+        amount_xmr: float,
+    ) -> str:
+        """
+        Final broadcast step for fake multisig: validates placeholder chain and returns txid.
+        """
+        if not deposit_subaddress or not final_tx_data_hex or not trade_id:
+            raise ValueError("invalid multisig submit parameters")
+        if deposit_subaddress not in self.confirmations_by_address:
+            raise ValueError("unknown multisig deposit address for fake wallet")
+        if "::SIG(buyer)" not in final_tx_data_hex or "::SIG(seller)" not in final_tx_data_hex:
+            raise ValueError("multisig tx is missing buyer or seller partial signatures")
+        return (
+            f"fake-msig2of3-submitted-from-{deposit_subaddress[:16]}-"
             f"to-{buyer_address[:12]}-amt-{amount_xmr}-tid-{trade_id[:8]}"
         )
 

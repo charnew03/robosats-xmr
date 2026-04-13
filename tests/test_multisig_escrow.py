@@ -56,6 +56,8 @@ def test_take_offer_uses_multisig_when_env_set(tmp_path, monkeypatch) -> None:
     info = json.loads(trade["multisig_info"])
     assert info["threshold"] == 2
     assert info["total"] == 3
+    assert (trade["maker_bond_address"] or "").startswith("45msig2of3bond")
+    assert (trade["taker_bond_address"] or "").startswith("45msig2of3bond")
 
 
 def test_release_multisig_path(tmp_path, monkeypatch) -> None:
@@ -76,10 +78,37 @@ def test_release_multisig_path(tmp_path, monkeypatch) -> None:
     client.post(f"/trades/{trade_id}/refresh-funding")
     client.post(f"/trades/{trade_id}/mark-fiat-paid")
 
-    rel = client.post(
+    prep = client.post(
+        f"/trades/{trade_id}/release-escrow/prepare",
+        json={"buyer_payout_address": "48buyerpayoutaddr"},
+    )
+    assert prep.status_code == 200
+    body = prep.json()
+    assert body["multisig_status"] == "prepared"
+    assert body["tx_data_hex"].startswith("FAKE_MSIG_UNSIGNED|")
+    assert body["trade"]["multisig_release_status"] == "prepared"
+
+    sb = client.post(
+        f"/trades/{trade_id}/release-escrow/sign",
+        json={"party": "buyer"},
+    )
+    assert sb.status_code == 200
+    assert sb.json()["multisig_status"] == "awaiting_signatures"
+
+    ss = client.post(
+        f"/trades/{trade_id}/release-escrow/sign",
+        json={"party": "seller"},
+    )
+    assert ss.status_code == 200
+    assert ss.json()["multisig_status"] == "ready_to_submit"
+
+    sub = client.post(f"/trades/{trade_id}/release-escrow/submit")
+    assert sub.status_code == 200
+    txid = sub.json()["release_txid"]
+    assert "fake-msig2of3-submitted" in txid
+
+    blocked = client.post(
         f"/trades/{trade_id}/release",
         json={"buyer_payout_address": "48buyerpayoutaddr"},
     )
-    assert rel.status_code == 200
-    txid = rel.json()["release_txid"]
-    assert "fake-msig2of3" in txid
+    assert blocked.status_code == 400

@@ -79,7 +79,9 @@ class Trade:
     taker_bond_subaddress_index: int | None = None
     maker_bond_confirmations: int = 0
     taker_bond_confirmations: int = 0
-    # Escrow: legacy single-party coordinator subaddress vs simulated 2-of-3 multisig.
+    # Escrow: legacy single-party coordinator subaddress vs 2-of-3 multisig (default).
+    # multisig_info holds JSON: threshold/total, optional bonds{}, and release{} during
+    # prepare/sign/submit (see backend.multisig_release).
     escrow_mode: str = "LEGACY_SUBADDRESS"
     multisig_info: str | None = None
 

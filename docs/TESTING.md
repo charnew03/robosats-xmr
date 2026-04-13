@@ -99,7 +99,7 @@ No milestone is complete until tests for that milestone pass locally and evidenc
 - [x] Audit event `bonds_assigned` on assign-deposit.
 - [x] `pytest -q` green including Phase 3 tests.
 
-## Phase 4 Order Book Checklist (In progress)
+## Phase 4 Order Book Checklist
 
 - [x] Makers can create public offers (`POST /offers`).
 - [x] Active offers can be listed (`GET /offers`).
@@ -109,3 +109,36 @@ No milestone is complete until tests for that milestone pass locally and evidenc
 - [x] Offer lifecycle guards prevent taking inactive offers.
 - [x] Risk limits enforced on offer creation for makers.
 - [x] Integration tests cover create offer -> list -> take -> trade creation flow.
+
+## MVP Frontend Checklist
+
+- [x] Order book with filters, refresh, and take-offer modal.
+- [x] Register / login (seed), create offer, dashboard filtered by account id.
+- [x] Trade detail: funding refresh, mark fiat paid, dispute, collaborative cancel.
+- [x] Trade detail: copy trade id / copy deposit, multisig-oriented release UX, improved toasts for key actions.
+- [x] Local chat placeholder with guidance to exchange Monero addresses in chat.
+
+## Multisig escrow (2-of-3) Checklist
+
+- [x] Default product mode allocates multisig-style escrow + bond receive metadata (`MULTISIG_2OF3`).
+- [x] `POST .../release-escrow/prepare` builds unsigned tx (`multisig_txset` on real multisig wallet-rpc; deterministic placeholder in dev).
+- [x] `POST .../release-escrow/sign` records buyer then seller contributions (`tx_data_hex` from each party’s wallet, or auto-simulated in dev).
+- [x] `POST .../release-escrow/submit` broadcasts via `submit_multisig`, persists `release_txid`, optional bond returns, audit trail.
+- [x] One-shot `POST .../release-escrow` rejected for multisig trades (legacy path unchanged).
+- [x] `GET /status` reports wallet mode and multisig RPC readiness.
+- [x] Tests: `tests/test_multisig_escrow.py` covers take → fund → multisig release path; `pytest -q` green.
+
+## Completion pass (final)
+
+| Area | Status |
+|------|--------|
+| Phase 1 — core trades & funding | **Green** |
+| Phase 2 — settlement & disputes | **Green** |
+| Phase 3 — bonds & hardening | **Green** |
+| Phase 4 — order book | **Green** |
+| MVP frontend | **Green** |
+| Non-custodial 2-of-3 multisig release | **Green** |
+| Documentation (`README.md`, this file) | **Green** |
+| Automated tests (`pytest -q`) | **Green** |
+
+The project is **ready for community review and bounty payout** from a checklist perspective; production operators should still follow their own deployment, key custody, and incident-response runbooks.

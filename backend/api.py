@@ -5,6 +5,7 @@ import logging
 import os
 from pathlib import Path
 import sqlite3
+from typing import Literal
 from uuid import uuid4
 
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -16,8 +17,9 @@ from backend.auth_repository import AuthRepository
 from backend.bond_service import assign_trade_bonds
 from backend.fake_wallet import FakeWalletFundingRPC
 from backend.funding_service import assign_trade_deposit, refresh_trade_funding
+from backend import multisig_release
 from backend.monero_rpc import MoneroWalletRPC
-from backend.multisig_escrow import MULTISIG_MODE
+from backend.multisig_escrow import MULTISIG_MODE, escrow_mode_from_env
 from backend.repository import Offer, SQLiteTradeRepository, TradeRepository
 from backend.seed_auth import (
     decode_access_token,
@@ -35,6 +37,7 @@ from backend.risk_limits import RiskLimits, enforce_seller_open_trade_limit
 from backend.rate_limit import RateLimiter
 from backend.trade_engine import Trade, TradeState
 from backend.wallet_adapter import (
+    check_wallet_health,
     reconcile_address_activity,
     release_bond_to_owner,
     release_escrow_to_buyer,
@@ -63,6 +66,16 @@ class ReleaseRequest(BaseModel):
     buyer_payout_address: str = Field(min_length=1)
     maker_return_address: str | None = None
     taker_return_address: str | None = None
+
+
+class MultisigSignRequest(BaseModel):
+    """Buyer/seller submit updated tx_data_hex from their own wallet (sign_multisig)."""
+
+    party: Literal["buyer", "seller"]
+    tx_data_hex: str | None = Field(
+        default=None,
+        description="Required for real wallet-rpc; optional in fake-wallet dev (server simulates).",
+    )
 
 
 class DisputeRequest(BaseModel):
@@ -120,6 +133,8 @@ class TradeResponse(BaseModel):
     taker_bond_subaddress_index: int | None = None
     escrow_mode: str = "LEGACY_SUBADDRESS"
     multisig_info: str | None = None
+    multisig_release_status: str | None = None
+    multisig_pending_tx_data_hex: str | None = None
 
 
 class OfferResponse(BaseModel):
@@ -141,6 +156,30 @@ class OfferResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     db_path: str
+
+
+class MultisigPrepareResponse(BaseModel):
+    trade: TradeResponse
+    multisig_status: str
+    tx_data_hex: str | None = None
+
+
+class MultisigSignResponse(BaseModel):
+    trade: TradeResponse
+    multisig_status: str
+    tx_data_hex: str | None = None
+
+
+class StatusResponse(BaseModel):
+    status: str = "ok"
+    db_path: str
+    wallet_mode: str
+    escrow_mode: str
+    default_multisig_product: bool
+    wallet_rpc_reachable: bool
+    wallet_synced: bool | None = None
+    coordinator_wallet_is_multisig: bool | None = None
+    multisig_release_rpc_ready: bool
 
 
 class RegisterInitResponse(BaseModel):
@@ -195,6 +234,8 @@ def to_trade_response(trade: Trade) -> TradeResponse:
         taker_bond_subaddress_index=trade.taker_bond_subaddress_index,
         escrow_mode=trade.escrow_mode,
         multisig_info=trade.multisig_info,
+        multisig_release_status=multisig_release.release_status_for_trade(trade),
+        multisig_pending_tx_data_hex=multisig_release.pending_tx_hex_for_trade(trade),
     )
 
 
@@ -625,25 +666,24 @@ def create_app(
             raise HTTPException(
                 status_code=400, detail="trade has no deposit address for escrow release"
             )
+        if trade.escrow_mode == MULTISIG_MODE:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "multisig escrow uses non-custodial prepare / sign / submit: "
+                    "POST /trades/{id}/release-escrow/prepare, then /sign (buyer, then seller), "
+                    "then /submit"
+                ),
+            )
         try:
             _ensure_bonds_accounted_for(trade)
-            ms_release = getattr(wallet_rpc, "release_multisig_escrow_to_buyer", None)
-            if trade.escrow_mode == MULTISIG_MODE and callable(ms_release):
-                txid = ms_release(
-                    trade.deposit_address,
-                    payload.buyer_payout_address,
-                    trade.amount_xmr,
-                    trade.trade_id,
-                )
-            else:
-                # Wallet sends the exact trade notional toward the buyer; fake wallet simulates
-                # from the deposit subaddress; real RPC prefers subaddr_indices when known.
-                txid = release_escrow_to_buyer(
-                    wallet_rpc,
-                    trade.deposit_address,
-                    payload.buyer_payout_address,
-                    trade.amount_xmr,
-                )
+            # Legacy single-subaddress coordinator release (see ROBOSATS_XMR_ESCROW_MODE=legacy).
+            txid = release_escrow_to_buyer(
+                wallet_rpc,
+                trade.deposit_address,
+                payload.buyer_payout_address,
+                trade.amount_xmr,
+            )
             trade.set_release(payload.buyer_payout_address, txid)
             bond_returns: list[str] = []
             if payload.maker_return_address and trade.maker_bond_address:
@@ -746,6 +786,267 @@ def create_app(
         if trade.taker_bond_address:
             taker_activity = reconcile_address_activity(wallet_rpc, trade.taker_bond_address)
             trade.taker_bond_confirmations = taker_activity.confirmations
+
+    @app.get("/status", response_model=StatusResponse)
+    def status() -> StatusResponse:
+        mode_label = escrow_mode_from_env()
+        default_ms = mode_label == MULTISIG_MODE
+        h = check_wallet_health(wallet_rpc)
+        coord_ms: bool | None = None
+        if not effective_use_fake_wallet and isinstance(wallet_rpc, MoneroWalletRPC):
+            if h.rpc_reachable:
+                try:
+                    coord_ms = wallet_rpc.is_multisig_wallet()
+                except Exception:
+                    coord_ms = False
+            else:
+                coord_ms = None
+        wallet_mode = "fake" if effective_use_fake_wallet else "real"
+        ms_ready = (effective_use_fake_wallet and default_ms) or (
+            default_ms and bool(coord_ms) and h.rpc_reachable
+        )
+        return StatusResponse(
+            status="ok",
+            db_path=effective_db_path,
+            wallet_mode=wallet_mode,
+            escrow_mode=mode_label,
+            default_multisig_product=default_ms,
+            wallet_rpc_reachable=h.rpc_reachable,
+            wallet_synced=h.synced if h.rpc_reachable else None,
+            coordinator_wallet_is_multisig=coord_ms,
+            multisig_release_rpc_ready=ms_ready,
+        )
+
+    @app.post("/trades/{trade_id}/release-escrow/prepare", response_model=MultisigPrepareResponse)
+    def multisig_prepare_release(
+        trade_id: str, payload: ReleaseRequest
+    ) -> MultisigPrepareResponse:
+        trade = trade_repository.get(trade_id)
+        if trade is None:
+            raise HTTPException(status_code=404, detail="trade not found")
+        if trade.escrow_mode != MULTISIG_MODE:
+            raise HTTPException(status_code=400, detail="trade is not multisig escrow mode")
+        if trade.state != TradeState.FIAT_MARKED_PAID:
+            raise HTTPException(
+                status_code=400,
+                detail="multisig prepare only when trade is FIAT_MARKED_PAID",
+            )
+        if not multisig_release.multisig_release_prepare_allowed(trade):
+            raise HTTPException(
+                status_code=400,
+                detail="multisig prepare not allowed (already prepared or missing multisig metadata)",
+            )
+        try:
+            _ensure_bonds_accounted_for(trade)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        payout = payload.buyer_payout_address.strip()
+        try:
+            if effective_use_fake_wallet:
+                unsigned = multisig_release.fake_prepare_unsigned_hex(
+                    trade_id, payout, trade.amount_xmr
+                )
+            else:
+                if not isinstance(wallet_rpc, MoneroWalletRPC):
+                    raise HTTPException(status_code=500, detail="wallet rpc not configured")
+                unsigned = wallet_rpc.prepare_multisig_escrow_unsigned(
+                    trade.deposit_address or "",
+                    payout,
+                    trade.amount_xmr,
+                )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        multisig_release.merge_release_into_trade(
+            trade,
+            {
+                "status": multisig_release.RELEASE_PREPARED,
+                "tx_data_hex": unsigned,
+                "buyer_payout_address": payout,
+                "maker_return_address": payload.maker_return_address,
+                "taker_return_address": payload.taker_return_address,
+                "signed_parties": [],
+            },
+        )
+        trade_repository.save(trade)
+        logger.info(
+            "Multisig prepare: trade=%s payout_prefix=%s unsigned_len=%s",
+            trade_id,
+            payout[:16],
+            len(unsigned),
+        )
+        return MultisigPrepareResponse(
+            trade=to_trade_response(trade),
+            multisig_status=multisig_release.RELEASE_PREPARED,
+            tx_data_hex=unsigned,
+        )
+
+    @app.post("/trades/{trade_id}/release-escrow/sign", response_model=MultisigSignResponse)
+    def multisig_sign_release(
+        trade_id: str, payload: MultisigSignRequest
+    ) -> MultisigSignResponse:
+        trade = trade_repository.get(trade_id)
+        if trade is None:
+            raise HTTPException(status_code=404, detail="trade not found")
+        if trade.escrow_mode != MULTISIG_MODE:
+            raise HTTPException(status_code=400, detail="trade is not multisig escrow mode")
+        if trade.state != TradeState.FIAT_MARKED_PAID:
+            raise HTTPException(
+                status_code=400,
+                detail="multisig signing only when trade is FIAT_MARKED_PAID",
+            )
+        rel = multisig_release.release_section(trade)
+        st = rel.get("status")
+        if st not in (multisig_release.RELEASE_PREPARED, multisig_release.RELEASE_AWAITING):
+            raise HTTPException(
+                status_code=400,
+                detail="multisig release is not in a signable state; call prepare first",
+            )
+        cur_hex = rel.get("tx_data_hex")
+        if not cur_hex or not isinstance(cur_hex, str):
+            raise HTTPException(status_code=400, detail="missing pending multisig tx_data_hex")
+        sigd = list(rel.get("signed_parties") or [])
+        party = payload.party
+        if party == "buyer":
+            if "buyer" in sigd:
+                raise HTTPException(status_code=400, detail="buyer signature already recorded")
+            if st != multisig_release.RELEASE_PREPARED:
+                raise HTTPException(
+                    status_code=400,
+                    detail="buyer must sign first while multisig_status is prepared",
+                )
+        else:
+            if "buyer" not in sigd:
+                raise HTTPException(status_code=400, detail="buyer must sign before seller")
+            if "seller" in sigd:
+                raise HTTPException(status_code=400, detail="seller signature already recorded")
+            if st != multisig_release.RELEASE_AWAITING:
+                raise HTTPException(
+                    status_code=400,
+                    detail="seller signs after buyer (awaiting_signatures)",
+                )
+        if effective_use_fake_wallet:
+            if payload.tx_data_hex and payload.tx_data_hex.strip():
+                new_hex = payload.tx_data_hex.strip()
+            else:
+                new_hex = multisig_release.fake_apply_peer_signature(cur_hex, party, trade_id)
+        else:
+            if not payload.tx_data_hex or len(payload.tx_data_hex.strip()) < 32:
+                raise HTTPException(
+                    status_code=400,
+                    detail="tx_data_hex required (paste output of sign_multisig from your wallet)",
+                )
+            new_hex = payload.tx_data_hex.strip()
+        if party == "buyer":
+            sigd.append("buyer")
+            next_status = multisig_release.RELEASE_AWAITING
+        else:
+            sigd.append("seller")
+            next_status = multisig_release.RELEASE_READY
+        multisig_release.merge_release_into_trade(
+            trade,
+            {"tx_data_hex": new_hex, "signed_parties": sigd, "status": next_status},
+        )
+        trade_repository.save(trade)
+        logger.info(
+            "Multisig sign: trade=%s party=%s next_status=%s partial_len=%s",
+            trade_id,
+            party,
+            next_status,
+            len(new_hex),
+        )
+        return MultisigSignResponse(
+            trade=to_trade_response(trade),
+            multisig_status=next_status,
+            tx_data_hex=new_hex,
+        )
+
+    @app.post("/trades/{trade_id}/release-escrow/submit", response_model=TradeResponse)
+    def multisig_submit_release(trade_id: str) -> TradeResponse:
+        trade = trade_repository.get(trade_id)
+        if trade is None:
+            raise HTTPException(status_code=404, detail="trade not found")
+        if trade.escrow_mode != MULTISIG_MODE:
+            raise HTTPException(status_code=400, detail="trade is not multisig escrow mode")
+        if trade.state != TradeState.FIAT_MARKED_PAID:
+            raise HTTPException(
+                status_code=400,
+                detail="multisig submit only when trade is FIAT_MARKED_PAID",
+            )
+        rel = multisig_release.release_section(trade)
+        if not multisig_release.multisig_submit_allowed(rel):
+            raise HTTPException(
+                status_code=400,
+                detail="multisig submit requires buyer and seller signatures (ready_to_submit)",
+            )
+        try:
+            _ensure_bonds_accounted_for(trade)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        payout = str(rel.get("buyer_payout_address") or "").strip()
+        if not payout:
+            raise HTTPException(status_code=400, detail="missing buyer payout address on prepared release")
+        tx_hex = rel.get("tx_data_hex")
+        if not tx_hex or not isinstance(tx_hex, str):
+            raise HTTPException(status_code=400, detail="missing multisig tx_data_hex for submit")
+        try:
+            if effective_use_fake_wallet:
+                subm = getattr(wallet_rpc, "submit_multisig_release", None)
+                if not callable(subm):
+                    raise HTTPException(status_code=500, detail="wallet cannot submit multisig release")
+                txid = subm(
+                    trade.deposit_address or "",
+                    tx_hex,
+                    trade.trade_id,
+                    payout,
+                    trade.amount_xmr,
+                )
+            else:
+                if not isinstance(wallet_rpc, MoneroWalletRPC):
+                    raise HTTPException(status_code=500, detail="wallet rpc not configured")
+                txid = wallet_rpc.submit_multisig_release(tx_hex)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=f"multisig submit failed: {exc}") from exc
+        trade.set_release(payout, txid)
+        bond_returns: list[str] = []
+        maker_ra = rel.get("maker_return_address")
+        taker_ra = rel.get("taker_return_address")
+        if maker_ra and trade.maker_bond_address:
+            maker_txid = release_bond_to_owner(
+                wallet_rpc,
+                trade.maker_bond_address,
+                str(maker_ra),
+                trade.maker_bond_amount,
+            )
+            bond_returns.append(f"maker:{maker_txid}")
+        if taker_ra and trade.taker_bond_address:
+            taker_txid = release_bond_to_owner(
+                wallet_rpc,
+                trade.taker_bond_address,
+                str(taker_ra),
+                trade.taker_bond_amount,
+            )
+            bond_returns.append(f"taker:{taker_txid}")
+        multisig_release.merge_release_into_trade(
+            trade,
+            {"status": multisig_release.RELEASE_SUBMITTED, "tx_data_hex": None},
+        )
+        trade_repository.save(trade)
+        logger.info(
+            "Multisig submit: trade=%s txid=%s -> RELEASED bonds=%s",
+            trade_id,
+            txid,
+            len(bond_returns),
+        )
+        if hasattr(trade_repository, "add_audit_event"):
+            trade_repository.add_audit_event(
+                trade_id,
+                trade.seller_id,
+                "release_escrow_multisig",
+                "; ".join([txid, *bond_returns]) if bond_returns else txid,
+            )
+        return to_trade_response(trade)
 
     @app.get("/trades/{trade_id}", response_model=TradeResponse)
     def get_trade(trade_id: str) -> TradeResponse:

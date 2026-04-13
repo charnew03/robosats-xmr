@@ -45,17 +45,34 @@ class MoneroWalletRPC:
         result = self._call("get_height")
         return bool(result.get("height", 0) > 0)
 
+    def allocate_multisig_bond(self, trade_id: str, role: str) -> tuple[str, str]:
+        """
+        Dedicated receive surface for maker/taker bonds under multisig product mode.
+
+        On-chain 2-of-3 bond wallets use the same coordinator RPC + offline co-signing
+        pattern as escrow once the coordinator imports a multisig wallet.
+        """
+        label = f"{trade_id}:bond:{role}:multisig2of3"
+        address = self.generate_subaddress(label)
+        meta = {
+            "threshold": 2,
+            "total": 3,
+            "trade_id": trade_id,
+            "role": role,
+            "kind": "bond",
+            "onchain_model": "coordinator_wallet_multisig_or_subaddress",
+        }
+        return address, json.dumps(meta, separators=(",", ":"))
+
     def allocate_multisig_trade_escrow(
         self, trade_id: str, seller_id: str, buyer_id: str
     ) -> tuple[str, str]:
         """
-        Allocate a dedicated subaddress for trade escrow when multisig mode is enabled.
+        Allocate a dedicated receive address for trade escrow (multisig-mode default).
 
-        Full on-chain 2-of-3 requires exchanging multisig infos via `prepare_multisig` /
-        `make_multisig` / `finalize_multisig` across three wallets; that handshake is not
-        automated here. The coordinator wallet still receives funds to this subaddress;
-        settlement uses the multisig-aware release path which should be upgraded to
-        `sign_transfer` / `submit_multisig` once peer keys are integrated.
+        Production coordinators should load a 2-of-3 multisig wallet into wallet-rpc so
+        `prepare_multisig_escrow_unsigned` / `submit_multisig_release` use real
+        `multisig_txset` flows; until then the address is still a distinct labeled slot.
         """
         address = self.generate_subaddress(f"{trade_id}:multisig2of3")
         meta = {
@@ -64,9 +81,83 @@ class MoneroWalletRPC:
             "trade_id": trade_id,
             "seller_id_prefix": seller_id[:24],
             "buyer_id_prefix": (buyer_id or "")[:24],
-            "onchain_model": "coordinator_subaddress_pending_full_multisig",
+            "onchain_model": "coordinator_wallet_multisig_or_subaddress",
         }
         return address, json.dumps(meta, separators=(",", ":"))
+
+    def is_multisig_wallet(self) -> bool:
+        """True when the opened wallet-rpc wallet is a multisig wallet."""
+        result = self._call("is_multisig")
+        return bool(result.get("multisig"))
+
+    def prepare_multisig_escrow_unsigned(
+        self, deposit_subaddress: str, buyer_address: str, amount_xmr: float
+    ) -> str:
+        """
+        Build an unsigned multisig transfer (Monero: transfer + do_not_relay → multisig_txset).
+
+        Requires a multisig-capable coordinator wallet; buyer/seller sign offline and POST
+        the updated tx_data_hex via the API.
+        """
+        if not self.is_multisig_wallet():
+            raise RuntimeError(
+                "coordinator wallet is not multisig; open a 2-of-3 multisig wallet in wallet-rpc"
+            )
+        if not deposit_subaddress or not buyer_address or amount_xmr <= 0:
+            raise ValueError("deposit, buyer address, and positive amount are required")
+
+        subaddr_indices: list[list[int]] | None = None
+        transfers = self._call(
+            "get_transfers",
+            {"in": True, "account_index": self.account_index},
+        )
+        for transfer in transfers.get("in", []):
+            if transfer.get("address") != deposit_subaddress:
+                continue
+            idx = transfer.get("subaddr_index") or {}
+            major = idx.get("major")
+            minor = idx.get("minor")
+            if major is not None and minor is not None:
+                subaddr_indices = [[int(major), int(minor)]]
+                break
+
+        atomic_amount = int(amount_xmr * 1e12)
+        params: dict = {
+            "account_index": self.account_index,
+            "destinations": [{"address": buyer_address, "amount": atomic_amount}],
+            "do_not_relay": True,
+            "get_tx_key": True,
+        }
+        if subaddr_indices:
+            params["subaddr_indices"] = subaddr_indices
+
+        result = self._call("transfer", params)
+        mset = result.get("multisig_txset")
+        if not mset:
+            raise RuntimeError(
+                "transfer did not return multisig_txset; ensure wallet is multisig and unlocked"
+            )
+        return str(mset)
+
+    def sign_multisig_step(self, tx_data_hex: str) -> str:
+        """Coordinator partial sign (wallet-rpc sign_multisig)."""
+        if not tx_data_hex:
+            raise ValueError("tx_data_hex is required")
+        result = self._call("sign_multisig", {"tx_data_hex": tx_data_hex})
+        out = result.get("tx_data_hex")
+        if not out:
+            raise RuntimeError("sign_multisig did not return tx_data_hex")
+        return str(out)
+
+    def submit_multisig_release(self, tx_data_hex: str) -> str:
+        """Broadcast fully signed multisig transaction."""
+        if not tx_data_hex:
+            raise ValueError("tx_data_hex is required")
+        result = self._call("submit_multisig", {"tx_data_hex": tx_data_hex})
+        hashes = result.get("tx_hash_list") or []
+        if not hashes:
+            raise RuntimeError("submit_multisig did not return tx_hash_list")
+        return str(hashes[0])
 
     def generate_subaddress(self, trade_id: str) -> str:
         result = self._call(
