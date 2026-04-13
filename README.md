@@ -1,6 +1,8 @@
 # robosats-xmr
 
-**Monero-native RoboSats-style P2P trading:** fiat ↔ XMR with **2-of-3 multisig escrow by default** (coordinator + buyer + seller), **10-block funding finality**, and a **non-custodial release path** where the buyer and seller contribute partial signatures; the coordinator prepares the unsigned transaction and submits only the fully signed result.
+**Monero-native RoboSats-style P2P trading:** fiat ↔ XMR with **2-of-3 multisig escrow by default** (coordinator + buyer + seller) and **10-block funding finality**.
+
+Settlement uses a **non-custodial release path:** the coordinator **prepares** the unsigned transaction, the **buyer and seller** each contribute **partial signatures** (`prepare` → `sign` → `submit`), and the coordinator **broadcasts** only the fully signed transaction—no single-party custodial spend in multisig mode.
 
 ## Phases
 
